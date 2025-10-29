@@ -1,0 +1,17 @@
+{
+  "name": "lawx-tjsp",
+  "version": "1.0.0",
+  "description": "Scraper do TJSP usando Puppeteer Core e Scrapeless",
+  "license": "MIT",
+  "author": "Sulivan Leite",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "puppeteer-core": "^23.7.0"
+  }
+}

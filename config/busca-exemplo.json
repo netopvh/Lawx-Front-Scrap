@@ -1,0 +1,53 @@
+{
+  "_comentario": "EXEMPLO de configuração de busca para TJSP - Copie para busca.json e edite conforme necessário",
+  "_instrucoes": "Use os nomes dos campos como aparecem no formulário do TJSP. Veja a seção _ajuda para mais detalhes.",
+
+  "Pesquisa livre": "Advogado",
+  "Pesquisa livre (ementa)": "",
+  "Número do processo": "",
+  "Número do registro": "",
+
+  "Data de julgamento (início)": "",
+  "Data de julgamento (fim)": "",
+  "Data de publicação (início)": "01/01/2024",
+  "Data de publicação (fim)": "31/12/2024",
+
+  "Pesquisar com sinônimos": true,
+
+  "Origem": ["2° grau"],
+  "Tipo de decisão": ["Acórdãos"],
+  "Ordenar por": "Data de Publicação",
+
+  "Código da Câmara/Grupo": "",
+  "Código do Tribunal": "",
+  "Nome do agente": "",
+  "Código do juiz (Câmara)": "",
+  "Código do juiz (Tribunal)": "",
+  "Nome do juiz": "",
+  "Classe processual": "",
+  "Assunto": "",
+  "Código da comarca": "",
+  "Nome da comarca": "",
+  "Seção": "",
+
+  "_ajuda": {
+    "Pesquisa livre": "Busca no texto completo do acórdão",
+    "Pesquisa livre (ementa)": "Busca apenas na ementa",
+    "Número do processo": "Formato: NNNNNNN-DD.AAAA.J.TR.OOOO",
+    "Número do registro": "Número do registro do acórdão",
+    "Data de julgamento (início)": "Formato: DD/MM/AAAA",
+    "Data de julgamento (fim)": "Formato: DD/MM/AAAA",
+    "Data de publicação (início)": "Formato: DD/MM/AAAA",
+    "Data de publicação (fim)": "Formato: DD/MM/AAAA",
+    "Pesquisar com sinônimos": "true ou false",
+    "Origem": "Opções: '2° grau', 'Colégios Recursais' ou ambos",
+    "Tipo de decisão": "Opções: 'Acórdãos', 'Homologações', 'Decisões Monocráticas' ou combinação",
+    "Ordenar por": "Opções: 'Data de Publicação' ou 'Relevância'",
+    "Nome do agente": "Nome do advogado, promotor, etc",
+    "Nome do juiz": "Nome do juiz/relator",
+    "Classe processual": "Ex: Apelação, Agravo, etc",
+    "Assunto": "Assunto do processo",
+    "Nome da comarca": "Nome da comarca"
+  }
+}
+

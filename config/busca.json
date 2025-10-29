@@ -1,0 +1,55 @@
+{
+  "_comentario": "Configuração de busca para TJSP - Preencha os campos como aparecem no formulário. Campos vazios serão ignorados.",
+  "_instrucoes": "Os nomes dos campos abaixo correspondem exatamente às labels do formulário do TJSP para facilitar o preenchimento.",
+
+  "Pesquisa livre": "Advogados",
+  "Pesquisa livre (ementa)": "",
+  "Número do processo": "",
+  "Número do registro": "",
+
+  "Data de julgamento (início)": "",
+  "Data de julgamento (fim)": "",
+  "Data de publicação (início)": "",
+  "Data de publicação (fim)": "",
+
+  "Pesquisar com sinônimos": true,
+
+  "Origem": [],
+  "Tipo de decisão": [],
+  "Ordenar por": "Data de Publicação",
+
+  "Código da Câmara/Grupo": "",
+  "Código do Tribunal": "",
+  "Nome do agente": "",
+  "Código do juiz (Câmara)": "",
+  "Código do juiz (Tribunal)": "",
+  "Nome do juiz": "",
+  "Classe processual": "",
+  "Assunto": "",
+  "Código da comarca": "",
+  "Nome da comarca": "",
+  "Seção": "",
+
+  "Pagina": "1",
+
+  "_ajuda": {
+    "Pagina": "Formato: '1' (única página), '1-3' (intervalo), '1;3;5' (páginas específicas), 'TODAS' ou 'ALL' ou 'TODOS' (todas as páginas)",
+    "Pesquisa livre": "Busca no texto completo do acórdão",
+    "Pesquisa livre (ementa)": "Busca apenas na ementa",
+    "Número do processo": "Formato: NNNNNNN-DD.AAAA.J.TR.OOOO",
+    "Número do registro": "Número do registro do acórdão",
+    "Data de julgamento (início)": "Formato: DD/MM/AAAA",
+    "Data de julgamento (fim)": "Formato: DD/MM/AAAA",
+    "Data de publicação (início)": "Formato: DD/MM/AAAA",
+    "Data de publicação (fim)": "Formato: DD/MM/AAAA",
+    "Pesquisar com sinônimos": "true ou false",
+    "Origem": "Opções: '2° grau', 'Colégios Recursais' ou ambos",
+    "Tipo de decisão": "Opções: 'Acórdãos', 'Homologações', 'Decisões Monocráticas' ou combinação",
+    "Ordenar por": "Opções: 'Data de Publicação' ou 'Relevância'",
+    "Nome do agente": "Nome do advogado, promotor, etc",
+    "Nome do juiz": "Nome do juiz/relator",
+    "Classe processual": "Ex: Apelação, Agravo, etc",
+    "Assunto": "Assunto do processo",
+    "Nome da comarca": "Nome da comarca"
+  }
+}
