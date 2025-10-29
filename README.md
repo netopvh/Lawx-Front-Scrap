@@ -250,13 +250,14 @@ ou
 
 ### Screenshots Automáticos
 
-O sistema captura 3 tipos de screenshots:
+O sistema captura 4 tipos de screenshots:
 
 | Prefixo | Quando | Descrição |
 |---------|--------|-----------|
 | `shot_` | ✅ Sucesso | Quando div#tabs é encontrada |
 | `error_` | ❌ Erro | Qualquer erro que impede o submit |
 | `captcha-bypass-fail_` | 🚫 Bypass falhou | Mensagem de reCAPTCHA detectada |
+| `captcha-timeout_` | ⏱️ Timeout | CAPTCHA não resolvido em 15 segundos |
 
 ### Logs
 
@@ -313,8 +314,18 @@ O scraper só considera sucesso quando:
 - Execute `npm install` novamente
 
 ### Erro: "Timeout esperando resolução do CAPTCHA"
-- Verifique seu token Scrapeless
-- Verifique se tem créditos na conta Scrapeless
+- **Timeout**: 15 segundos (configurado para detectar problemas rapidamente)
+- **Possíveis causas**:
+  - Perda de contato com servidor Scrapeless
+  - Servidor Scrapeless está lento ou sobrecarregado
+  - Problemas de conexão de rede
+  - Token Scrapeless inválido ou expirado
+  - Sem créditos na conta Scrapeless
+- **Solução**:
+  - Verifique sua conexão com a internet
+  - Verifique se o token Scrapeless está correto no `.env`
+  - Verifique se tem créditos na conta Scrapeless
+  - Aguarde alguns minutos e tente novamente
 
 ### Bypass do reCAPTCHA falhou
 - Aguarde alguns minutos e tente novamente

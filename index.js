@@ -35,8 +35,9 @@ async function addCaptchaListener(page) {
 /**
  * Aguarda a resolução do CAPTCHA com timeout
  * Usa EventEmitter para comunicação entre funções (padrão da documentação)
+ * Timeout padrão: 15 segundos (se não resolver, provavelmente perdeu contato com Scrapeless)
  */
-async function onCaptchaFinished(timeout = 120_000) {
+async function onCaptchaFinished(timeout = 15_000) {
   return Promise.race([
     new Promise((resolve) => {
       emitter.on("Captcha.solveFinished", (msg) => {
@@ -44,7 +45,7 @@ async function onCaptchaFinished(timeout = 120_000) {
       });
     }),
     new Promise((_, reject) =>
-      setTimeout(() => reject("Timeout esperando resolução do CAPTCHA."), timeout)
+      setTimeout(() => reject("Timeout de 15 segundos esperando resolução do CAPTCHA. Possível perda de contato com servidor Scrapeless ou servidor lento."), timeout)
     ),
   ]);
 }
@@ -622,9 +623,18 @@ async function runScraper(browser, url) {
     log(`🌐 Navegando para: ${url}`, "INFO");
     await page.goto(url, { timeout: 60000, waitUntil: "domcontentloaded" });
 
-    log("⏳ Aguardando solução do CAPTCHA...", "INFO");
-    await onCaptchaFinished();
-    log("✅ CAPTCHA resolvido com sucesso!", "SUCCESS");
+    log("⏳ Aguardando solução do CAPTCHA (timeout: 15 segundos)...", "INFO");
+    try {
+      await onCaptchaFinished();
+      log("✅ CAPTCHA resolvido com sucesso!", "SUCCESS");
+    } catch (error) {
+      log("❌ TIMEOUT: CAPTCHA não foi resolvido em 15 segundos!", "ERROR");
+      log("⚠️ Possíveis causas:", "ERROR");
+      log("   - Perda de contato com servidor Scrapeless", "ERROR");
+      log("   - Servidor Scrapeless está lento ou sobrecarregado", "ERROR");
+      log("   - Problemas de conexão de rede", "ERROR");
+      throw new Error("Timeout aguardando resolução do CAPTCHA. Verifique conexão com Scrapeless.");
+    }
 
     // Aguardar um pouco após resolver o CAPTCHA
     log("⏱️ Aguardando 2 segundos após resolução do CAPTCHA...", "INFO");
@@ -902,8 +912,9 @@ async function runScraper(browser, url) {
     // Capturar screenshot de erro SOMENTE se não for erro de bypass do reCAPTCHA
     // (pois o bypass já captura seu próprio screenshot com nome captcha-bypass-fail_)
     const isCaptchaBypassError = error.message.includes("Bypass do reCAPTCHA falhou");
+    const isCaptchaTimeoutError = error.message.includes("Timeout aguardando resolução do CAPTCHA");
 
-    if (page && !isCaptchaBypassError) {
+    if (page && !isCaptchaBypassError && !isCaptchaTimeoutError) {
       try {
         const errorFilename = getTimestampedFilename("error", "png");
         const errorScreenshot = path.join("screenshots", errorFilename);
@@ -914,6 +925,16 @@ async function runScraper(browser, url) {
       }
     } else if (isCaptchaBypassError) {
       log("ℹ️ Screenshot de falha do bypass já foi capturado anteriormente", "INFO");
+    } else if (isCaptchaTimeoutError) {
+      // Capturar screenshot específico para timeout do CAPTCHA
+      try {
+        const timeoutFilename = getTimestampedFilename("captcha-timeout", "png");
+        const timeoutScreenshot = path.join("screenshots", timeoutFilename);
+        await page.screenshot({ path: timeoutScreenshot, fullPage: true });
+        log(`📸 Screenshot de timeout do CAPTCHA salvo: ${timeoutScreenshot}`, "ERROR");
+      } catch (screenshotError) {
+        log(`❌ Erro ao capturar screenshot de timeout: ${screenshotError.message}`, "ERROR");
+      }
     }
 
     throw error;
