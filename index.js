@@ -31,39 +31,150 @@ let logFilePath = null;
  * Usa EventEmitter para comunicação entre funções (padrão da documentação)
  */
 async function addCaptchaListener(page) {
-  const client = await page.createCDPSession();
+  try {
+    const client = await page.createCDPSession();
 
-  client.on("Captcha.detected", (msg) => {
-    log("🔍 CAPTCHA DETECTADO pelo Scrapeless", "INFO");
-    log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
-  });
+    client.on("Captcha.detected", (msg) => {
+      log("🔍 CAPTCHA DETECTADO pelo Scrapeless (evento CDP)", "INFO");
+      log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
+      emitter.emit("Captcha.detected", msg);
+    });
 
-  client.on("Captcha.solveFinished", async (msg) => {
-    log("✅ CAPTCHA RESOLVIDO pelo Scrapeless", "SUCCESS");
-    log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
-    emitter.emit("Captcha.solveFinished", msg);
-    client.removeAllListeners();
-  });
+    client.on("Captcha.solveFinished", async (msg) => {
+      log("✅ CAPTCHA RESOLVIDO pelo Scrapeless (evento CDP)", "SUCCESS");
+      log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
+      emitter.emit("Captcha.solveFinished", msg);
+    });
 
-  log("👂 Listeners de CAPTCHA configurados com sucesso", "SUCCESS");
+    log("👂 Listeners CDP de CAPTCHA configurados com sucesso", "SUCCESS");
+    return client;
+  } catch (error) {
+    log(`⚠️ Erro ao configurar listeners CDP: ${error.message}`, "WARNING");
+    log("   Continuando com verificação visual de CAPTCHA", "INFO");
+    return null;
+  }
 }
 
 /**
- * Aguarda a resolução do CAPTCHA com timeout
- * Usa EventEmitter para comunicação entre funções (padrão da documentação)
- * Timeout padrão: 15 segundos (se não resolver, provavelmente perdeu contato com Scrapeless)
+ * Verifica visualmente se o CAPTCHA foi resolvido (não há elementos de CAPTCHA visíveis)
  */
-async function onCaptchaFinished(timeout = 15_000) {
-  return Promise.race([
-    new Promise((resolve) => {
-      emitter.on("Captcha.solveFinished", (msg) => {
-        resolve(msg);
+async function isCaptchaResolved(page) {
+  try {
+    const result = await page.evaluate(() => {
+      // Verificar iframes de CAPTCHA
+      const iframes = Array.from(document.querySelectorAll('iframe'));
+      const captchaIframes = iframes.filter(iframe => {
+        const src = iframe.src || '';
+        const title = iframe.title || '';
+        return (src.includes('recaptcha') || src.includes('captcha') ||
+                src.includes('turnstile') || src.includes('cloudflare') ||
+                title.includes('recaptcha') || title.includes('captcha')) &&
+               iframe.offsetParent !== null;
       });
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject("Timeout de 15 segundos esperando resolução do CAPTCHA. Possível perda de contato com servidor Scrapeless ou servidor lento."), timeout)
-    ),
-  ]);
+
+      // Verificar divs/overlays de CAPTCHA
+      const captchaDivs = Array.from(document.querySelectorAll(
+        'div[class*="captcha"], div[id*="captcha"], div[class*="turnstile"], div[id*="turnstile"]'
+      ));
+      const visibleCaptchaDivs = captchaDivs.filter(div => {
+        const style = window.getComputedStyle(div);
+        return div.offsetParent !== null &&
+               style.display !== 'none' &&
+               style.visibility !== 'hidden' &&
+               style.opacity !== '0';
+      });
+
+      // Verificar se formulário está acessível
+      const form = document.querySelector('form');
+      const formVisible = form && form.offsetParent !== null;
+
+      return {
+        captchaIframesCount: captchaIframes.length,
+        captchaDivsCount: visibleCaptchaDivs.length,
+        formVisible: formVisible,
+        resolved: captchaIframes.length === 0 && visibleCaptchaDivs.length === 0 && formVisible
+      };
+    });
+
+    return result;
+  } catch (error) {
+    log(`⚠️ Erro ao verificar CAPTCHA visualmente: ${error.message}`, "WARNING");
+    return { resolved: false, error: error.message };
+  }
+}
+
+/**
+ * Aguarda a resolução do CAPTCHA com abordagem híbrida:
+ * 1. Espera pelo evento CDP do Scrapeless (método preferencial)
+ * 2. Verifica visualmente se CAPTCHA foi resolvido (fallback)
+ * Timeout padrão: 30 segundos
+ */
+async function onCaptchaFinished(page, timeout = 30_000) {
+  const startTime = Date.now();
+  let cdpEventReceived = false;
+
+  log("⏳ Aguardando resolução do CAPTCHA...", "INFO");
+  log("   Método 1: Evento CDP do Scrapeless", "INFO");
+  log("   Método 2: Verificação visual (fallback)", "INFO");
+
+  // Promise para evento CDP
+  const cdpPromise = new Promise((resolve) => {
+    emitter.once("Captcha.solveFinished", (msg) => {
+      cdpEventReceived = true;
+      log("✅ CAPTCHA resolvido via evento CDP!", "SUCCESS");
+      resolve({ method: "CDP", msg });
+    });
+  });
+
+  // Promise para verificação visual com polling
+  const visualPromise = new Promise(async (resolve, reject) => {
+    const checkInterval = 1000; // Verificar a cada 1 segundo
+
+    while (Date.now() - startTime < timeout) {
+      // Se já recebeu evento CDP, não precisa continuar verificando
+      if (cdpEventReceived) {
+        resolve({ method: "CDP" });
+        return;
+      }
+
+      // Verificar visualmente
+      const captchaStatus = await isCaptchaResolved(page);
+
+      if (captchaStatus.resolved) {
+        log("✅ CAPTCHA resolvido via verificação visual!", "SUCCESS");
+        log(`   iframes de CAPTCHA: ${captchaStatus.captchaIframesCount}`, "INFO");
+        log(`   divs de CAPTCHA: ${captchaStatus.captchaDivsCount}`, "INFO");
+        log(`   Formulário visível: ${captchaStatus.formVisible}`, "INFO");
+        resolve({ method: "Visual", status: captchaStatus });
+        return;
+      }
+
+      // Aguardar antes da próxima verificação
+      await new Promise(r => setTimeout(r, checkInterval));
+    }
+
+    // Timeout
+    reject(new Error(`Timeout de ${timeout/1000} segundos esperando resolução do CAPTCHA`));
+  });
+
+  // Promise de timeout
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`Timeout de ${timeout/1000} segundos esperando resolução do CAPTCHA`)), timeout)
+  );
+
+  try {
+    // Aguardar qualquer um dos métodos resolver
+    const result = await Promise.race([cdpPromise, visualPromise, timeoutPromise]);
+
+    const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    log(`⏱️ CAPTCHA resolvido em ${elapsedTime}s usando método: ${result.method}`, "SUCCESS");
+
+    return result;
+  } catch (error) {
+    const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    log(`❌ Falha após ${elapsedTime}s: ${error.message}`, "ERROR");
+    throw error;
+  }
 }
 
 /**
@@ -912,22 +1023,39 @@ async function runScraper(browser, url) {
     log(`🌐 Navegando para: ${url}`, "INFO");
     await page.goto(url, { timeout: 60000, waitUntil: "domcontentloaded" });
 
-    log("⏳ Aguardando solução do CAPTCHA (timeout: 15 segundos)...", "INFO");
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🔐 AGUARDANDO RESOLUÇÃO DO CAPTCHA", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
     try {
-      await onCaptchaFinished();
-      log("✅ CAPTCHA resolvido com sucesso pelo Scrapeless!", "SUCCESS");
+      const result = await onCaptchaFinished(page, 30000); // 30 segundos
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("✅ CAPTCHA RESOLVIDO COM SUCESSO!", "SUCCESS");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+
     } catch (error) {
-      log("❌ TIMEOUT: CAPTCHA não foi resolvido em 15 segundos!", "ERROR");
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+      log("❌ FALHA NA RESOLUÇÃO DO CAPTCHA", "ERROR");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+      log(`Erro: ${error.message}`, "ERROR");
+      log("", "ERROR");
       log("⚠️ Possíveis causas:", "ERROR");
-      log("   - Perda de contato com servidor Scrapeless", "ERROR");
-      log("   - Servidor Scrapeless está lento ou sobrecarregado", "ERROR");
-      log("   - Problemas de conexão de rede", "ERROR");
+      log("   1. Perda de contato com servidor Scrapeless", "ERROR");
+      log("   2. Servidor Scrapeless está lento ou sobrecarregado", "ERROR");
+      log("   3. Problemas de conexão de rede", "ERROR");
+      log("   4. CAPTCHA não foi apresentado (página já estava liberada)", "ERROR");
+      log("   5. Tipo de CAPTCHA não suportado pelo Scrapeless", "ERROR");
 
       // Capturar screenshot do timeout
       const timeoutFilename = getTimestampedFilename("captcha-timeout", "png");
       const timeoutScreenshot = path.join("screenshots", timeoutFilename);
       await page.screenshot({ path: timeoutScreenshot, fullPage: true });
       log(`📸 Screenshot do timeout capturado: ${timeoutScreenshot}`, "ERROR");
+      log("═══════════════════════════════════════════════════════", "ERROR");
 
       throw new Error("Timeout aguardando resolução do CAPTCHA. Verifique conexão com Scrapeless.");
     }
