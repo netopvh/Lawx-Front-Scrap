@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import OpenAI from "openai";
+import { Pinecone } from "@pinecone-database/pinecone";
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -11,6 +12,11 @@ dotenv.config();
 // Inicializar cliente OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Inicializar cliente Pinecone
+const pinecone = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY,
 });
 
 // EventEmitter para comunicação entre funções de CAPTCHA
@@ -360,6 +366,118 @@ async function categorizeEmenta(ementa) {
       codigo_categoria: "erro_categorizacao",
       desc_categoria: `Erro: ${error.message}`
     };
+  }
+}
+
+/**
+ * Gera embedding (vetor) para um texto usando OpenAI
+ */
+async function generateEmbedding(text) {
+  try {
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+      encoding_format: "float"
+    });
+
+    return response.data[0].embedding;
+  } catch (error) {
+    log(`❌ Erro ao gerar embedding: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+/**
+ * Envia itens para Pinecone como vetores
+ */
+async function uploadToPinecone(items) {
+  try {
+    const indexName = process.env.PINECONE_INDEX_NAME;
+
+    if (!indexName) {
+      log("⚠️ PINECONE_INDEX_NAME não configurado - pulando upload para Pinecone", "WARNING");
+      return { success: false, uploaded: 0, errors: 0 };
+    }
+
+    log(`🔗 Conectando ao índice Pinecone: ${indexName}`, "INFO");
+    const index = pinecone.index(indexName);
+
+    let uploaded = 0;
+    let errors = 0;
+
+    // Processar em lotes de 10 itens
+    const batchSize = 10;
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+
+      log(`📤 Processando lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(items.length / batchSize)} (${batch.length} itens)...`, "INFO");
+
+      const vectors = [];
+
+      for (const item of batch) {
+        try {
+          // Criar texto combinado para embedding (ementa + categoria + classe/assunto)
+          const textForEmbedding = `
+            Ementa: ${item.ementa || ""}
+            Categoria: ${item.categoria || ""}
+            Classe/Assunto: ${item.classe_assunto || ""}
+          `.trim();
+
+          // Gerar embedding
+          log(`  🔄 Gerando embedding para processo ${item.numero_processo}...`, "INFO");
+          const embedding = await generateEmbedding(textForEmbedding);
+
+          // Preparar vetor para Pinecone
+          vectors.push({
+            id: item.numero_processo.replace(/[^0-9]/g, ""), // Remover caracteres especiais do ID
+            values: embedding,
+            metadata: {
+              numero_processo: item.numero_processo,
+              classe_assunto: item.classe_assunto || "",
+              relator: item.relator || "",
+              comarca: item.comarca || "",
+              orgao_julgador: item.orgao_julgador || "",
+              data_julgamento: item.data_julgamento || "",
+              data_publicacao: item.data_publicacao || "",
+              categoria: item.categoria || "",
+              codigo_categoria: item.codigo_categoria || "",
+              desc_categoria: item.desc_categoria || "",
+              pdf_url: item.pdf_url || "",
+              ementa: item.ementa ? item.ementa.substring(0, 40000) : "" // Pinecone tem limite de metadata
+            }
+          });
+
+          uploaded++;
+
+        } catch (error) {
+          log(`  ❌ Erro ao processar item ${item.numero_processo}: ${error.message}`, "ERROR");
+          errors++;
+        }
+      }
+
+      // Enviar lote para Pinecone
+      if (vectors.length > 0) {
+        try {
+          await index.upsert(vectors);
+          log(`  ✅ Lote enviado para Pinecone: ${vectors.length} vetores`, "SUCCESS");
+        } catch (error) {
+          log(`  ❌ Erro ao enviar lote para Pinecone: ${error.message}`, "ERROR");
+          errors += vectors.length;
+          uploaded -= vectors.length;
+        }
+      }
+
+      // Pequeno delay entre lotes
+      if (i + batchSize < items.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    return { success: true, uploaded, errors };
+
+  } catch (error) {
+    log(`❌ Erro ao conectar com Pinecone: ${error.message}`, "ERROR");
+    return { success: false, uploaded: 0, errors: items.length };
   }
 }
 
@@ -1047,6 +1165,30 @@ async function runScraper(browser, url) {
     log(`✅ Categorizados com sucesso: ${categorizadosComSucesso}`, "SUCCESS");
     log(`❌ Erros na categorização: ${errosCategorizacao}`, errosCategorizacao > 0 ? "WARNING" : "INFO");
     log(`📊 Total de itens: ${allData.items.length}`, "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    // === UPLOAD PARA PINECONE ===
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🌲 INICIANDO UPLOAD PARA PINECONE", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    const pineconeResult = await uploadToPinecone(allData.items);
+
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("📊 RESUMO DO UPLOAD PARA PINECONE", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    if (pineconeResult.success) {
+      log(`✅ Vetores enviados com sucesso: ${pineconeResult.uploaded}`, "SUCCESS");
+      log(`❌ Erros no upload: ${pineconeResult.errors}`, pineconeResult.errors > 0 ? "WARNING" : "INFO");
+      log(`📊 Total de itens: ${allData.items.length}`, "INFO");
+    } else {
+      log(`❌ Falha ao conectar com Pinecone`, "ERROR");
+      log(`⚠️ Os dados foram salvos localmente em JSON`, "WARNING");
+    }
+
     log("═══════════════════════════════════════════════════════", "INFO");
 
     // Salvar JSON consolidado com categorização

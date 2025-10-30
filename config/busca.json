@@ -30,7 +30,7 @@
   "Nome da comarca": "",
   "Seção": "",
 
-  "Pagina": "1",
+  "Pagina": "1-3",
 
   "_ajuda": {
     "Pagina": "Formato: '1' (única página), '1-3' (intervalo), '1;3;5' (páginas específicas), 'TODAS' ou 'ALL' ou 'TODOS' (todas as páginas)",
