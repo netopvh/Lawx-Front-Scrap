@@ -310,6 +310,23 @@ async function main() {
     initializeLog();
     log("=== INICIANDO SCRAPER TJSP ===", "INFO");
 
+    // Configuração de fingerprint customizado para evitar detecção
+    const fingerprint = {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      platform: 'Windows',
+      screen: {
+        width: 1920,
+        height: 1080
+      },
+      localization: {
+        languages: ['pt-BR', 'pt', 'en-US', 'en'],
+        timezone: 'America/Sao_Paulo',
+      },
+      args: {
+        '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
+      }
+    };
+
     // Configuração do Browser Scrapeless
     const query = new URLSearchParams({
       token: process.env.SCRAPELESS_TOKEN,
@@ -317,11 +334,19 @@ async function main() {
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper",
+      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)), // Adicionar fingerprint customizado
     });
 
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     log("🔗 Conectando ao browser Scrapeless...", "INFO");
+    log("🖐️ Usando fingerprint customizado:", "INFO");
+    log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
+    log(`   Platform: ${fingerprint.platform}`, "INFO");
+    log(`   Screen: ${fingerprint.screen.width}x${fingerprint.screen.height}`, "INFO");
+    log(`   Timezone: ${fingerprint.localization.timezone}`, "INFO");
+    log(`   Languages: ${fingerprint.localization.languages.join(', ')}`, "INFO");
+
     browser = await puppeteer.connect({
       browserWSEndpoint: connectionURL,
       defaultViewport: null,
@@ -1243,16 +1268,45 @@ async function runScraper(browser, url) {
 
     log("Formulario preenchido com sucesso!", "SUCCESS");
 
-    log("🔍 Clicando no botão 'Pesquisar'...", "INFO");
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 }),
-      page.click('input[type="submit"][value="Pesquisar"]'),
-    ]);
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🔍 CLICANDO NO BOTÃO PESQUISAR", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    // Clicar no botão sem aguardar navegação (pode ter CAPTCHA)
+    await page.click('input[type="submit"][value="Pesquisar"]');
+    log("✅ Botão clicado!", "SUCCESS");
+
+    // Aguardar um pouco para ver se CAPTCHA aparece
+    log("⏱️ Aguardando 2 segundos para detectar possível CAPTCHA...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Verificar se CAPTCHA foi detectado após o clique
+    log("🔍 Verificando se CAPTCHA foi detectado após submissão...", "INFO");
+
+    try {
+      // Aguardar resolução do CAPTCHA (se houver)
+      const result = await onCaptchaFinished(page, 45000);
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("✅ CAPTCHA PÓS-SUBMISSÃO RESOLVIDO!", "SUCCESS");
+      log(`   Método usado: ${result.method}`, "SUCCESS");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+
+      // Aguardar navegação após CAPTCHA resolvido
+      log("⏳ Aguardando navegação para página de resultados...", "INFO");
+      await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+
+    } catch (error) {
+      // Se timeout, pode ser que não tinha CAPTCHA e já navegou
+      log("ℹ️ Nenhum CAPTCHA detectado após submissão (ou já resolvido)", "INFO");
+    }
 
     log("📄 Página de resultados carregada!", "SUCCESS");
 
     // Aguardar um pouco para a página carregar completamente
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Verificar novamente se houve falha no bypass APÓS submeter o formulário
     log("🔍 Verificando se há mensagem de erro após submissão...", "INFO");
