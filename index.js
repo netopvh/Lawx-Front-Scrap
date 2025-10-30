@@ -806,6 +806,11 @@ async function runScraper(browser, url) {
 
     // Processar cada campo da configuracao
     for (const [friendlyName, value] of Object.entries(config)) {
+      // Ignorar campo "Pagina" - não é um campo do formulário, é configuração de paginação
+      if (friendlyName === "Pagina") {
+        continue;
+      }
+
       const fieldMapping = FIELDS_MAPPING[friendlyName];
 
       if (!fieldMapping) {
