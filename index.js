@@ -3,9 +3,15 @@ import EventEmitter from "events";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import OpenAI from "openai";
 
 // Carregar variáveis de ambiente
 dotenv.config();
+
+// Inicializar cliente OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // EventEmitter para comunicação entre funções de CAPTCHA
 const emitter = new EventEmitter();
@@ -254,6 +260,107 @@ function convertValue(fieldName, value) {
   }
 
   return value;
+}
+
+/**
+ * Carrega as categorias do arquivo CSV
+ */
+function loadCategories() {
+  try {
+    const csvPath = path.join("config", "categorias.csv");
+    const csvContent = fs.readFileSync(csvPath, "utf-8");
+    const lines = csvContent.split("\n").filter(line => line.trim() !== "");
+
+    // Pular cabeçalho
+    const categories = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length >= 2) {
+        categories.push({
+          indice: parts[0].trim(),
+          categoria: parts[1].trim(),
+          desc_categoria: parts[2] ? parts[2].trim().replace(/"/g, "") : "",
+          codigo_categoria: parts[3] ? parts[3].trim() : ""
+        });
+      }
+    }
+
+    return categories;
+  } catch (error) {
+    log(`❌ Erro ao carregar categorias: ${error.message}`, "ERROR");
+    return [];
+  }
+}
+
+/**
+ * Carrega o prompt de categorização
+ */
+function loadPrompt(promptFile) {
+  try {
+    const promptPath = path.join("prompts", promptFile);
+    return fs.readFileSync(promptPath, "utf-8");
+  } catch (error) {
+    log(`❌ Erro ao carregar prompt ${promptFile}: ${error.message}`, "ERROR");
+    return "";
+  }
+}
+
+/**
+ * Categoriza uma ementa usando OpenAI
+ */
+async function categorizeEmenta(ementa) {
+  try {
+    // Carregar categorias e prompts
+    const categories = loadCategories();
+    const categoriesList = categories.map(c => c.categoria).join(", ");
+
+    const promptCategoria = loadPrompt("prompt_categoria.txt");
+    const promptRegras = loadPrompt("prompt_regras_agente.txt");
+
+    // Substituir placeholder no prompt
+    const systemPrompt = promptCategoria.replace("{valid_categories_list}", categoriesList);
+
+    log(`🤖 Enviando ementa para OpenAI (modelo: ${process.env.OPENAI_MODEL})...`, "INFO");
+
+    // Chamar OpenAI
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `${systemPrompt}\n\n${promptRegras}`
+        },
+        {
+          role: "user",
+          content: `Classifique a seguinte ementa:\n\n${ementa}`
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 100
+    });
+
+    const categoria = response.choices[0].message.content.trim();
+    log(`✅ Categoria identificada: ${categoria}`, "SUCCESS");
+
+    // Encontrar o código da categoria
+    const categoriaEncontrada = categories.find(c =>
+      c.categoria.toLowerCase() === categoria.toLowerCase()
+    );
+
+    return {
+      categoria: categoria,
+      codigo_categoria: categoriaEncontrada ? categoriaEncontrada.codigo_categoria : "sem_categoria",
+      desc_categoria: categoriaEncontrada ? categoriaEncontrada.desc_categoria : ""
+    };
+
+  } catch (error) {
+    log(`❌ Erro ao categorizar ementa: ${error.message}`, "ERROR");
+    return {
+      categoria: "erro_categorizacao",
+      codigo_categoria: "erro_categorizacao",
+      desc_categoria: `Erro: ${error.message}`
+    };
+  }
 }
 
 /**
@@ -887,7 +994,57 @@ async function runScraper(browser, url) {
       }
     }
 
-    // Salvar JSON consolidado
+    // === CATEGORIZAÇÃO COM OPENAI ===
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🤖 INICIANDO CATEGORIZAÇÃO COM OPENAI", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    let categorizadosComSucesso = 0;
+    let errosCategorizacao = 0;
+
+    for (let i = 0; i < allData.items.length; i++) {
+      const item = allData.items[i];
+
+      log(`📝 Categorizando item ${i + 1}/${allData.items.length} (Processo: ${item.numero_processo})...`, "INFO");
+
+      if (!item.ementa || item.ementa.trim() === "") {
+        log(`⚠️ Item ${i + 1} não possui ementa. Pulando categorização.`, "WARNING");
+        item.categoria = "sem_ementa";
+        item.codigo_categoria = "sem_ementa";
+        item.desc_categoria = "Item não possui ementa para categorização";
+        errosCategorizacao++;
+        continue;
+      }
+
+      // Categorizar ementa
+      const categorizacao = await categorizeEmenta(item.ementa);
+
+      // Adicionar campos de categorização ao item
+      item.categoria = categorizacao.categoria;
+      item.codigo_categoria = categorizacao.codigo_categoria;
+      item.desc_categoria = categorizacao.desc_categoria;
+
+      if (categorizacao.codigo_categoria !== "erro_categorizacao") {
+        categorizadosComSucesso++;
+      } else {
+        errosCategorizacao++;
+      }
+
+      // Pequeno delay para não sobrecarregar a API
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("📊 RESUMO DA CATEGORIZAÇÃO", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log(`✅ Categorizados com sucesso: ${categorizadosComSucesso}`, "SUCCESS");
+    log(`❌ Erros na categorização: ${errosCategorizacao}`, errosCategorizacao > 0 ? "WARNING" : "INFO");
+    log(`📊 Total de itens: ${allData.items.length}`, "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    // Salvar JSON consolidado com categorização
     const jsonFilename = getTimestampedFilename("scrap", "json");
     const jsonPath = path.join("scraps", jsonFilename);
     fs.writeFileSync(jsonPath, JSON.stringify(allData, null, 2), "utf-8");
