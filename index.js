@@ -388,6 +388,59 @@ async function generateEmbedding(text) {
 }
 
 /**
+ * Verifica se índice Pinecone existe e cria se necessário
+ */
+async function ensurePineconeIndex() {
+  try {
+    const indexName = process.env.PINECONE_INDEX_NAME;
+    const dimension = parseInt(process.env.PINECONE_DIMENSION || "1536");
+    const cloud = process.env.PINECONE_CLOUD || "aws";
+    const region = process.env.PINECONE_ENVIRONMENT || "us-east-1";
+
+    log(`🔍 Verificando se índice '${indexName}' existe...`, "INFO");
+
+    // Listar índices existentes
+    const existingIndexes = await pinecone.listIndexes();
+    const indexExists = existingIndexes.indexes?.some(idx => idx.name === indexName);
+
+    if (indexExists) {
+      log(`✅ Índice '${indexName}' já existe - usando índice existente`, "SUCCESS");
+      return true;
+    }
+
+    // Criar novo índice
+    log(`📝 Índice '${indexName}' não existe - criando novo índice...`, "INFO");
+    log(`   Dimensão: ${dimension}`, "INFO");
+    log(`   Cloud: ${cloud}`, "INFO");
+    log(`   Region: ${region}`, "INFO");
+
+    await pinecone.createIndex({
+      name: indexName,
+      dimension: dimension,
+      metric: "cosine",
+      spec: {
+        serverless: {
+          cloud: cloud,
+          region: region
+        }
+      }
+    });
+
+    log(`✅ Índice '${indexName}' criado com sucesso!`, "SUCCESS");
+
+    // Aguardar índice ficar pronto
+    log(`⏳ Aguardando índice ficar pronto...`, "INFO");
+    await new Promise(resolve => setTimeout(resolve, 10000)); // 10 segundos
+
+    return true;
+
+  } catch (error) {
+    log(`❌ Erro ao verificar/criar índice: ${error.message}`, "ERROR");
+    return false;
+  }
+}
+
+/**
  * Envia itens para Pinecone como vetores
  */
 async function uploadToPinecone(items) {
@@ -397,6 +450,13 @@ async function uploadToPinecone(items) {
     if (!indexName) {
       log("⚠️ PINECONE_INDEX_NAME não configurado - pulando upload para Pinecone", "WARNING");
       return { success: false, uploaded: 0, errors: 0 };
+    }
+
+    // Verificar/criar índice
+    const indexReady = await ensurePineconeIndex();
+    if (!indexReady) {
+      log("❌ Não foi possível preparar o índice Pinecone", "ERROR");
+      return { success: false, uploaded: 0, errors: items.length };
     }
 
     log(`🔗 Conectando ao índice Pinecone: ${indexName}`, "INFO");
