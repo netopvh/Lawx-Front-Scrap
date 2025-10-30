@@ -31,35 +31,165 @@ let logFilePath = null;
  * Usa EventEmitter para comunicação entre funções (padrão da documentação)
  */
 async function addCaptchaListener(page) {
-  const client = await page.createCDPSession();
+  try {
+    const client = await page.createCDPSession();
 
-  client.on("Captcha.detected", (msg) => {
-    console.log("🔍 Captcha.detected:", JSON.stringify(msg));
-  });
+    client.on("Captcha.detected", (msg) => {
+      log("🔍 CAPTCHA DETECTADO pelo Scrapeless (evento CDP)", "INFO");
+      log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
+      emitter.emit("Captcha.detected", msg);
+    });
 
-  client.on("Captcha.solveFinished", async (msg) => {
-    console.log("✅ Captcha.solveFinished:", JSON.stringify(msg));
-    emitter.emit("Captcha.solveFinished", msg);
-    client.removeAllListeners();
-  });
+    client.on("Captcha.solveFinished", async (msg) => {
+      log("✅ CAPTCHA RESOLVIDO pelo Scrapeless (evento CDP)", "SUCCESS");
+      log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
+      emitter.emit("Captcha.solveFinished", msg);
+    });
+
+    log("👂 Listeners CDP de CAPTCHA configurados com sucesso", "SUCCESS");
+    return client;
+  } catch (error) {
+    log(`⚠️ Erro ao configurar listeners CDP: ${error.message}`, "WARNING");
+    log("   Continuando com verificação visual de CAPTCHA", "INFO");
+    return null;
+  }
 }
 
 /**
- * Aguarda a resolução do CAPTCHA com timeout
- * Usa EventEmitter para comunicação entre funções (padrão da documentação)
- * Timeout padrão: 15 segundos (se não resolver, provavelmente perdeu contato com Scrapeless)
+ * Verifica visualmente se o CAPTCHA foi resolvido (não há elementos de CAPTCHA visíveis)
  */
-async function onCaptchaFinished(timeout = 15_000) {
-  return Promise.race([
-    new Promise((resolve) => {
-      emitter.on("Captcha.solveFinished", (msg) => {
-        resolve(msg);
+async function isCaptchaResolved(page) {
+  try {
+    const result = await page.evaluate(() => {
+      // Verificar iframes de CAPTCHA
+      const iframes = Array.from(document.querySelectorAll('iframe'));
+      const captchaIframes = iframes.filter(iframe => {
+        const src = iframe.src || '';
+        const title = iframe.title || '';
+        return (src.includes('recaptcha') || src.includes('captcha') ||
+                src.includes('turnstile') || src.includes('cloudflare') ||
+                title.includes('recaptcha') || title.includes('captcha')) &&
+               iframe.offsetParent !== null;
       });
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject("Timeout de 15 segundos esperando resolução do CAPTCHA. Possível perda de contato com servidor Scrapeless ou servidor lento."), timeout)
-    ),
-  ]);
+
+      // Verificar divs/overlays de CAPTCHA
+      const captchaDivs = Array.from(document.querySelectorAll(
+        'div[class*="captcha"], div[id*="captcha"], div[class*="turnstile"], div[id*="turnstile"]'
+      ));
+      const visibleCaptchaDivs = captchaDivs.filter(div => {
+        const style = window.getComputedStyle(div);
+        return div.offsetParent !== null &&
+               style.display !== 'none' &&
+               style.visibility !== 'hidden' &&
+               style.opacity !== '0';
+      });
+
+      // Verificar se formulário está acessível
+      const form = document.querySelector('form');
+      const formVisible = form && form.offsetParent !== null;
+
+      return {
+        captchaIframesCount: captchaIframes.length,
+        captchaDivsCount: visibleCaptchaDivs.length,
+        formVisible: formVisible,
+        resolved: captchaIframes.length === 0 && visibleCaptchaDivs.length === 0 && formVisible
+      };
+    });
+
+    return result;
+  } catch (error) {
+    log(`⚠️ Erro ao verificar CAPTCHA visualmente: ${error.message}`, "WARNING");
+    return { resolved: false, error: error.message };
+  }
+}
+
+/**
+ * Aguarda a resolução do CAPTCHA com abordagem inteligente:
+ * 1. Aguarda evento "Captcha.detected" do Scrapeless (indica que CAPTCHA foi encontrado)
+ * 2. Aguarda evento "Captcha.solveFinished" (indica que foi resolvido)
+ * 3. Se não houver CAPTCHA, verifica visualmente e continua
+ * Timeout padrão: 45 segundos
+ */
+async function onCaptchaFinished(page, timeout = 45_000) {
+  const startTime = Date.now();
+  let captchaDetected = false;
+  let captchaSolved = false;
+
+  log("⏳ Aguardando detecção e resolução do CAPTCHA...", "INFO");
+
+  return new Promise(async (resolve, reject) => {
+    // Listener para detecção de CAPTCHA
+    const onDetected = (msg) => {
+      captchaDetected = true;
+      log("🔍 CAPTCHA detectado - aguardando resolução pelo Scrapeless...", "INFO");
+    };
+
+    // Listener para resolução de CAPTCHA
+    const onSolved = (msg) => {
+      captchaSolved = true;
+      log("✅ CAPTCHA resolvido pelo Scrapeless (evento CDP)!", "SUCCESS");
+      cleanup();
+
+      const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      log(`⏱️ CAPTCHA resolvido em ${elapsedTime}s`, "SUCCESS");
+
+      resolve({ method: "CDP", msg });
+    };
+
+    // Cleanup de listeners
+    const cleanup = () => {
+      emitter.removeListener("Captcha.detected", onDetected);
+      emitter.removeListener("Captcha.solveFinished", onSolved);
+    };
+
+    // Registrar listeners
+    emitter.on("Captcha.detected", onDetected);
+    emitter.on("Captcha.solveFinished", onSolved);
+
+    // Timeout
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      reject(new Error(`Timeout de ${timeout/1000}s esperando resolução do CAPTCHA (tempo decorrido: ${elapsedTime}s)`));
+    }, timeout);
+
+    // Verificação visual periódica (apenas se CAPTCHA NÃO foi detectado pelo CDP)
+    const checkInterval = setInterval(async () => {
+      try {
+        // Se CAPTCHA foi detectado pelo CDP, aguardar apenas o evento de resolução
+        if (captchaDetected && !captchaSolved) {
+          log("   ⏳ CAPTCHA detectado - aguardando Scrapeless resolver...", "INFO");
+          return;
+        }
+
+        // Se CAPTCHA já foi resolvido, parar verificação
+        if (captchaSolved) {
+          clearInterval(checkInterval);
+          return;
+        }
+
+        // Verificar visualmente se não há CAPTCHA ou se já foi resolvido
+        const captchaStatus = await isCaptchaResolved(page);
+
+        if (captchaStatus.resolved) {
+          // Se CAPTCHA nunca foi detectado pelo CDP, significa que não havia CAPTCHA
+          if (!captchaDetected) {
+            log("✅ Nenhum CAPTCHA detectado - página já está liberada!", "SUCCESS");
+            cleanup();
+            clearInterval(checkInterval);
+            clearTimeout(timeoutId);
+
+            const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+            log(`⏱️ Verificação concluída em ${elapsedTime}s`, "SUCCESS");
+
+            resolve({ method: "No-CAPTCHA", status: captchaStatus });
+          }
+        }
+      } catch (error) {
+        log(`⚠️ Erro na verificação visual: ${error.message}`, "WARNING");
+      }
+    }, 2000); // Verificar a cada 2 segundos
+  });
 }
 
 /**
@@ -180,6 +310,23 @@ async function main() {
     initializeLog();
     log("=== INICIANDO SCRAPER TJSP ===", "INFO");
 
+    // Configuração de fingerprint customizado para evitar detecção
+    const fingerprint = {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      platform: 'Windows',
+      screen: {
+        width: 1920,
+        height: 1080
+      },
+      localization: {
+        languages: ['pt-BR', 'pt', 'en-US', 'en'],
+        timezone: 'America/Sao_Paulo',
+      },
+      args: {
+        '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
+      }
+    };
+
     // Configuração do Browser Scrapeless
     const query = new URLSearchParams({
       token: process.env.SCRAPELESS_TOKEN,
@@ -187,11 +334,19 @@ async function main() {
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper",
+      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)), // Adicionar fingerprint customizado
     });
 
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     log("🔗 Conectando ao browser Scrapeless...", "INFO");
+    log("🖐️ Usando fingerprint customizado:", "INFO");
+    log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
+    log(`   Platform: ${fingerprint.platform}`, "INFO");
+    log(`   Screen: ${fingerprint.screen.width}x${fingerprint.screen.height}`, "INFO");
+    log(`   Timezone: ${fingerprint.localization.timezone}`, "INFO");
+    log(`   Languages: ${fingerprint.localization.languages.join(', ')}`, "INFO");
+
     browser = await puppeteer.connect({
       browserWSEndpoint: connectionURL,
       defaultViewport: null,
@@ -908,22 +1063,83 @@ async function runScraper(browser, url) {
     log(`🌐 Navegando para: ${url}`, "INFO");
     await page.goto(url, { timeout: 60000, waitUntil: "domcontentloaded" });
 
-    log("⏳ Aguardando solução do CAPTCHA (timeout: 15 segundos)...", "INFO");
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🔐 AGUARDANDO RESOLUÇÃO DO CAPTCHA", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
     try {
-      await onCaptchaFinished();
-      log("✅ CAPTCHA resolvido com sucesso!", "SUCCESS");
+      const result = await onCaptchaFinished(page, 45000); // 45 segundos
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("✅ CAPTCHA RESOLVIDO COM SUCESSO!", "SUCCESS");
+      log(`   Método usado: ${result.method}`, "SUCCESS");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+
     } catch (error) {
-      log("❌ TIMEOUT: CAPTCHA não foi resolvido em 15 segundos!", "ERROR");
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+      log("❌ FALHA NA RESOLUÇÃO DO CAPTCHA", "ERROR");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+      log(`Erro: ${error.message}`, "ERROR");
+      log("", "ERROR");
       log("⚠️ Possíveis causas:", "ERROR");
-      log("   - Perda de contato com servidor Scrapeless", "ERROR");
-      log("   - Servidor Scrapeless está lento ou sobrecarregado", "ERROR");
-      log("   - Problemas de conexão de rede", "ERROR");
+      log("   1. Perda de contato com servidor Scrapeless", "ERROR");
+      log("   2. Servidor Scrapeless está lento ou sobrecarregado", "ERROR");
+      log("   3. Problemas de conexão de rede", "ERROR");
+      log("   4. CAPTCHA não foi apresentado (página já estava liberada)", "ERROR");
+      log("   5. Tipo de CAPTCHA não suportado pelo Scrapeless", "ERROR");
+
+      // Capturar screenshot do timeout
+      const timeoutFilename = getTimestampedFilename("captcha-timeout", "png");
+      const timeoutScreenshot = path.join("screenshots", timeoutFilename);
+      await page.screenshot({ path: timeoutScreenshot, fullPage: true });
+      log(`📸 Screenshot do timeout capturado: ${timeoutScreenshot}`, "ERROR");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+
       throw new Error("Timeout aguardando resolução do CAPTCHA. Verifique conexão com Scrapeless.");
     }
 
     // Aguardar um pouco após resolver o CAPTCHA
-    log("⏱️ Aguardando 2 segundos após resolução do CAPTCHA...", "INFO");
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    log("⏱️ Aguardando 3 segundos após resolução do CAPTCHA...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    // Verificar se a página está realmente pronta (sem overlay de CAPTCHA)
+    log("🔍 Verificando se página está completamente carregada...", "INFO");
+    const pageReady = await page.evaluate(() => {
+      // Verificar se não há overlay de CAPTCHA visível
+      const captchaOverlay = document.querySelector('iframe[src*="recaptcha"], iframe[src*="captcha"], div[class*="captcha"]');
+      const hasCaptchaVisible = captchaOverlay && captchaOverlay.offsetParent !== null;
+
+      // Verificar se formulário está acessível
+      const formExists = document.querySelector('form') !== null;
+
+      return {
+        noCaptchaVisible: !hasCaptchaVisible,
+        formExists: formExists,
+        ready: !hasCaptchaVisible && formExists
+      };
+    });
+
+    log(`   Sem CAPTCHA visível: ${pageReady.noCaptchaVisible}`, "INFO");
+    log(`   Formulário existe: ${pageReady.formExists}`, "INFO");
+
+    if (!pageReady.ready) {
+      log("⚠️ Página não está completamente pronta - CAPTCHA ainda pode estar visível", "WARNING");
+
+      // Aguardar mais um pouco
+      log("⏱️ Aguardando mais 5 segundos...", "INFO");
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Capturar screenshot para debug
+      const notReadyFilename = getTimestampedFilename("page-not-ready", "png");
+      const notReadyScreenshot = path.join("screenshots", notReadyFilename);
+      await page.screenshot({ path: notReadyScreenshot, fullPage: true });
+      log(`📸 Screenshot da página não pronta: ${notReadyScreenshot}`, "WARNING");
+    } else {
+      log("✅ Página completamente carregada e pronta!", "SUCCESS");
+    }
 
     // Verificar se houve falha no bypass do reCAPTCHA
     log("🔍 Verificando se o bypass do reCAPTCHA foi bem-sucedido...", "INFO");
@@ -973,14 +1189,36 @@ async function runScraper(browser, url) {
     const config = loadSearchConfig();
 
     // === PREENCHER FORMULARIO ===
-    log("Preenchendo formulario de busca...", "INFO");
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("📝 INICIANDO PREENCHIMENTO DO FORMULÁRIO", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
 
     // Aguardar o primeiro campo estar disponivel
     const firstField = FIELDS_MAPPING["Pesquisa livre"];
     if (firstField) {
-      log("Aguardando formulario estar disponivel...", "INFO");
-      await page.waitForSelector(firstField.selector, { timeout: 10000 });
+      log("⏳ Aguardando formulário estar disponível...", "INFO");
+      try {
+        await page.waitForSelector(firstField.selector, { timeout: 15000 });
+        log("✅ Formulário está disponível!", "SUCCESS");
+      } catch (error) {
+        log("❌ Formulário não ficou disponível em 15 segundos!", "ERROR");
+
+        // Capturar screenshot
+        const formNotReadyFilename = getTimestampedFilename("form-not-ready", "png");
+        const formNotReadyScreenshot = path.join("screenshots", formNotReadyFilename);
+        await page.screenshot({ path: formNotReadyScreenshot, fullPage: true });
+        log(`📸 Screenshot do formulário não disponível: ${formNotReadyScreenshot}`, "ERROR");
+
+        throw new Error("Formulário não ficou disponível - possível problema com CAPTCHA");
+      }
     }
+
+    // Aguardar mais um pouco para garantir que página está estável
+    log("⏱️ Aguardando 2 segundos para estabilização da página...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    log("✅ Pronto para preencher formulário!", "SUCCESS");
 
     // Processar cada campo da configuracao
     for (const [friendlyName, value] of Object.entries(config)) {
@@ -1030,16 +1268,45 @@ async function runScraper(browser, url) {
 
     log("Formulario preenchido com sucesso!", "SUCCESS");
 
-    log("🔍 Clicando no botão 'Pesquisar'...", "INFO");
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 }),
-      page.click('input[type="submit"][value="Pesquisar"]'),
-    ]);
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🔍 CLICANDO NO BOTÃO PESQUISAR", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    // Clicar no botão sem aguardar navegação (pode ter CAPTCHA)
+    await page.click('input[type="submit"][value="Pesquisar"]');
+    log("✅ Botão clicado!", "SUCCESS");
+
+    // Aguardar um pouco para ver se CAPTCHA aparece
+    log("⏱️ Aguardando 2 segundos para detectar possível CAPTCHA...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Verificar se CAPTCHA foi detectado após o clique
+    log("🔍 Verificando se CAPTCHA foi detectado após submissão...", "INFO");
+
+    try {
+      // Aguardar resolução do CAPTCHA (se houver)
+      const result = await onCaptchaFinished(page, 45000);
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("✅ CAPTCHA PÓS-SUBMISSÃO RESOLVIDO!", "SUCCESS");
+      log(`   Método usado: ${result.method}`, "SUCCESS");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+
+      // Aguardar navegação após CAPTCHA resolvido
+      log("⏳ Aguardando navegação para página de resultados...", "INFO");
+      await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+
+    } catch (error) {
+      // Se timeout, pode ser que não tinha CAPTCHA e já navegou
+      log("ℹ️ Nenhum CAPTCHA detectado após submissão (ou já resolvido)", "INFO");
+    }
 
     log("📄 Página de resultados carregada!", "SUCCESS");
 
     // Aguardar um pouco para a página carregar completamente
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Verificar novamente se houve falha no bypass APÓS submeter o formulário
     log("🔍 Verificando se há mensagem de erro após submissão...", "INFO");
