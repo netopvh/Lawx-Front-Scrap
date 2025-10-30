@@ -596,7 +596,23 @@ async function ensurePineconeIndex() {
 }
 
 /**
+ * Normaliza nome de categoria para usar como namespace no Pinecone
+ * Remove acentos, espaços e caracteres especiais
+ */
+function normalizeNamespace(categoria) {
+  if (!categoria) return "sem-categoria";
+
+  return categoria
+    .normalize("NFD") // Decompor caracteres acentuados
+    .replace(/[\u0300-\u036f]/g, "") // Remover acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-") // Substituir caracteres especiais por hífen
+    .replace(/^-+|-+$/g, ""); // Remover hífens do início e fim
+}
+
+/**
  * Envia itens para Pinecone como vetores
+ * Organiza por categoria usando namespaces
  */
 async function uploadToPinecone(items) {
   try {
@@ -617,78 +633,112 @@ async function uploadToPinecone(items) {
     log(`🔗 Conectando ao índice Pinecone: ${indexName}`, "INFO");
     const index = pinecone.index(indexName);
 
-    let uploaded = 0;
-    let errors = 0;
-
-    // Processar em lotes de 10 itens
-    const batchSize = 10;
-    for (let i = 0; i < items.length; i += batchSize) {
-      const batch = items.slice(i, i + batchSize);
-
-      log(`📤 Processando lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(items.length / batchSize)} (${batch.length} itens)...`, "INFO");
-
-      const vectors = [];
-
-      for (const item of batch) {
-        try {
-          // Criar texto combinado para embedding (ementa + categoria + classe/assunto)
-          const textForEmbedding = `
-            Ementa: ${item.ementa || ""}
-            Categoria: ${item.categoria || ""}
-            Classe/Assunto: ${item.classe_assunto || ""}
-          `.trim();
-
-          // Gerar embedding
-          log(`  🔄 Gerando embedding para processo ${item.numero_processo}...`, "INFO");
-          const embedding = await generateEmbedding(textForEmbedding);
-
-          // Preparar vetor para Pinecone
-          vectors.push({
-            id: item.numero_processo.replace(/[^0-9]/g, ""), // Remover caracteres especiais do ID
-            values: embedding,
-            metadata: {
-              numero_processo: item.numero_processo,
-              classe_assunto: item.classe_assunto || "",
-              relator: item.relator || "",
-              comarca: item.comarca || "",
-              orgao_julgador: item.orgao_julgador || "",
-              data_julgamento: item.data_julgamento || "",
-              data_publicacao: item.data_publicacao || "",
-              categoria: item.categoria || "",
-              codigo_categoria: item.codigo_categoria || "",
-              desc_categoria: item.desc_categoria || "",
-              pdf_url: item.pdf_url || "",
-              ementa: item.ementa ? item.ementa.substring(0, 40000) : "" // Pinecone tem limite de metadata
-            }
-          });
-
-          uploaded++;
-
-        } catch (error) {
-          log(`  ❌ Erro ao processar item ${item.numero_processo}: ${error.message}`, "ERROR");
-          errors++;
-        }
+    // Agrupar itens por categoria
+    const itemsByCategory = {};
+    for (const item of items) {
+      const categoria = item.categoria || "Sem Categoria";
+      if (!itemsByCategory[categoria]) {
+        itemsByCategory[categoria] = [];
       }
-
-      // Enviar lote para Pinecone
-      if (vectors.length > 0) {
-        try {
-          await index.upsert(vectors);
-          log(`  ✅ Lote enviado para Pinecone: ${vectors.length} vetores`, "SUCCESS");
-        } catch (error) {
-          log(`  ❌ Erro ao enviar lote para Pinecone: ${error.message}`, "ERROR");
-          errors += vectors.length;
-          uploaded -= vectors.length;
-        }
-      }
-
-      // Pequeno delay entre lotes
-      if (i + batchSize < items.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      itemsByCategory[categoria].push(item);
     }
 
-    return { success: true, uploaded, errors };
+    log(`📊 Itens agrupados em ${Object.keys(itemsByCategory).length} categoria(s)`, "INFO");
+    for (const [categoria, categoryItems] of Object.entries(itemsByCategory)) {
+      const namespace = normalizeNamespace(categoria);
+      log(`   📁 ${categoria}: ${categoryItems.length} itens → namespace: "${namespace}"`, "INFO");
+    }
+    log("", "INFO");
+
+    let totalUploaded = 0;
+    let totalErrors = 0;
+
+    // Processar cada categoria separadamente
+    for (const [categoria, categoryItems] of Object.entries(itemsByCategory)) {
+      const namespace = normalizeNamespace(categoria);
+
+      log(`📁 Processando categoria: ${categoria} (namespace: "${namespace}")`, "INFO");
+      log(`   Total de itens: ${categoryItems.length}`, "INFO");
+
+      let uploaded = 0;
+      let errors = 0;
+
+      // Processar em lotes de 10 itens
+      const batchSize = 10;
+      for (let i = 0; i < categoryItems.length; i += batchSize) {
+        const batch = categoryItems.slice(i, i + batchSize);
+
+        log(`   📤 Lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(categoryItems.length / batchSize)} (${batch.length} itens)...`, "INFO");
+
+        const vectors = [];
+
+        for (const item of batch) {
+          try {
+            // Criar texto combinado para embedding (ementa + categoria + classe/assunto)
+            const textForEmbedding = `
+              Ementa: ${item.ementa || ""}
+              Categoria: ${item.categoria || ""}
+              Classe/Assunto: ${item.classe_assunto || ""}
+            `.trim();
+
+            // Gerar embedding
+            log(`      🔄 Gerando embedding para processo ${item.numero_processo}...`, "INFO");
+            const embedding = await generateEmbedding(textForEmbedding);
+
+            // Preparar vetor para Pinecone
+            vectors.push({
+              id: item.numero_processo.replace(/[^0-9]/g, ""), // Remover caracteres especiais do ID
+              values: embedding,
+              metadata: {
+                numero_processo: item.numero_processo,
+                classe_assunto: item.classe_assunto || "",
+                relator: item.relator || "",
+                comarca: item.comarca || "",
+                orgao_julgador: item.orgao_julgador || "",
+                data_julgamento: item.data_julgamento || "",
+                data_publicacao: item.data_publicacao || "",
+                categoria: item.categoria || "",
+                codigo_categoria: item.codigo_categoria || "",
+                desc_categoria: item.desc_categoria || "",
+                pdf_url: item.pdf_url || "",
+                ementa: item.ementa ? item.ementa.substring(0, 40000) : "" // Pinecone tem limite de metadata
+              }
+            });
+
+            uploaded++;
+
+          } catch (error) {
+            log(`      ❌ Erro ao processar item ${item.numero_processo}: ${error.message}`, "ERROR");
+            errors++;
+          }
+        }
+
+        // Enviar lote para Pinecone no namespace da categoria
+        if (vectors.length > 0) {
+          try {
+            await index.namespace(namespace).upsert(vectors);
+            log(`      ✅ Lote enviado para namespace "${namespace}": ${vectors.length} vetores`, "SUCCESS");
+          } catch (error) {
+            log(`      ❌ Erro ao enviar lote para Pinecone: ${error.message}`, "ERROR");
+            errors += vectors.length;
+            uploaded -= vectors.length;
+          }
+        }
+
+        // Pequeno delay entre lotes
+        if (i + batchSize < categoryItems.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      log(`   ✅ Categoria "${categoria}" concluída: ${uploaded} enviados, ${errors} erros`, uploaded > 0 ? "SUCCESS" : "WARNING");
+      log("", "INFO");
+
+      totalUploaded += uploaded;
+      totalErrors += errors;
+    }
+
+    return { success: true, uploaded: totalUploaded, errors: totalErrors };
 
   } catch (error) {
     log(`❌ Erro ao conectar com Pinecone: ${error.message}`, "ERROR");
@@ -916,7 +966,17 @@ async function extractPageData(page) {
 async function navigateToPage(page, pageNumber) {
   log(`📄 Navegando para página ${pageNumber}...`, "INFO");
 
-  // Clicar no link da página
+  // Verificar se a paginação existe
+  const paginationExists = await page.evaluate(() => {
+    const paginacaoDiv = document.querySelector('#paginacaoSuperior-A');
+    return !!paginacaoDiv;
+  });
+
+  if (!paginationExists) {
+    throw new Error(`Elemento de paginação '#paginacaoSuperior-A' não encontrado`);
+  }
+
+  // Clicar no link da página e aguardar o conteúdo atualizar
   const clicked = await page.evaluate((targetPage) => {
     const paginacaoDiv = document.querySelector('#paginacaoSuperior-A');
     if (!paginacaoDiv) return false;
@@ -937,11 +997,35 @@ async function navigateToPage(page, pageNumber) {
     throw new Error(`Não foi possível encontrar link para página ${pageNumber}`);
   }
 
-  // Aguardar navegação
-  await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+  // TJSP usa AJAX para paginação - aguardar a div #tabs ser atualizada
+  log(`⏳ Aguardando conteúdo da página ${pageNumber} carregar (AJAX)...`, "INFO");
+
+  // Aguardar um pouco para o AJAX iniciar
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  log(`✅ Página ${pageNumber} carregada!`, "SUCCESS");
+  // Aguardar a div #tabs ter conteúdo atualizado
+  // Verificamos se há pelo menos 1 item na nova página
+  try {
+    await page.waitForFunction(
+      () => {
+        const tabs = document.querySelector('#tabs');
+        if (!tabs) return false;
+
+        // Verificar se há itens carregados
+        const items = tabs.querySelectorAll('tr.fundocinza1, tr.fundocinza2');
+        return items.length > 0;
+      },
+      { timeout: 15000 } // 15 segundos para AJAX carregar
+    );
+
+    // Aguardar mais um pouco para garantir que tudo carregou
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    log(`✅ Página ${pageNumber} carregada via AJAX!`, "SUCCESS");
+  } catch (error) {
+    log(`⚠️ Timeout aguardando conteúdo AJAX da página ${pageNumber}`, "WARNING");
+    throw new Error(`Timeout aguardando conteúdo AJAX da página ${pageNumber}: ${error.message}`);
+  }
 }
 
 /**
