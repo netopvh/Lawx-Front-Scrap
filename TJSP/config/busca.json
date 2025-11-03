@@ -2,13 +2,13 @@
   "_comentario": "Configuração de busca para TJSP - Preencha os campos como aparecem no formulário. Campos vazios serão ignorados.",
   "_instrucoes": "Os nomes dos campos abaixo correspondem exatamente às labels do formulário do TJSP para facilitar o preenchimento.",
 
-  "Pesquisa livre": "Advogados",
+  "Pesquisa livre": "",
   "Pesquisa livre (ementa)": "",
   "Número do processo": "",
   "Número do registro": "",
 
-  "Data de julgamento (início)": "",
-  "Data de julgamento (fim)": "",
+  "Data de julgamento (início)": "01/01/2025",
+  "Data de julgamento (fim)": "03/01/2025",
   "Data de publicação (início)": "",
   "Data de publicação (fim)": "",
 
