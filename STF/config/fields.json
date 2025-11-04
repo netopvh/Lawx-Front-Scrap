@@ -1,0 +1,66 @@
+{
+  "_comment": "Seletores para extração de dados do STF - Baseados na estrutura HTML real",
+
+  "resultados": {
+    "selector": ".result-container"
+  },
+
+  "numero_processo": {
+    "selector": "h4:nth-of-type(1)",
+    "_description": "Número do processo (ex: RE 1182189)"
+  },
+
+  "orgao_julgador": {
+    "selector": "h4:nth-of-type(2) > span",
+    "_description": "Órgão julgador (ex: Tribunal Pleno, Primeira Turma)"
+  },
+
+  "relator": {
+    "selector": "h4:nth-of-type(3) > span",
+    "_description": "Ministro relator (ex: Min. MARCO AURÉLIO)"
+  },
+
+  "redator_acordao": {
+    "selector": "h4:nth-of-type(4) > span",
+    "_description": "Ministro redator do acórdão (ex: Min. EDSON FACHIN)"
+  },
+
+  "data_julgamento": {
+    "selector": "h4:nth-of-type(5) > span",
+    "_description": "Data de julgamento (ex: 25/04/2023)"
+  },
+
+  "data_publicacao": {
+    "selector": "h4:nth-of-type(6) > span",
+    "_description": "Data de publicação (ex: 16/06/2023)"
+  },
+
+  "tipo_decisao": {
+    "selector": "div.result-container > span",
+    "_description": "Tipo de decisão (ex: Repercussão Geral – Mérito)"
+  },
+
+  "ementa": {
+    "selector": "p.jud-text.m-0",
+    "_description": "Ementa completa do acórdão"
+  },
+
+  "link_detalhes": {
+    "selector": "a[mattooltip='Dados completos']",
+    "attribute": "href",
+    "_description": "Link para página de detalhes"
+  },
+
+  "link_acompanhamento": {
+    "selector": "a[mattooltip='Acompanhamento processual']",
+    "attribute": "href",
+    "_description": "Link para acompanhamento processual"
+  },
+
+  "link_tema_repercussao": {
+    "selector": "a[mattooltip='Consultar tema de repercussão geral']",
+    "attribute": "href",
+    "_description": "Link para tema de repercussão geral (quando aplicável)"
+  }
+}
+

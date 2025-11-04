@@ -1,0 +1,67 @@
+{
+  "timestamp": "2025-11-04T14:37:07.450Z",
+  "url": "https://jurisprudencia.stf.jus.br/pages/search?base=acordaos&pesquisa_inteiro_teor=false&sinonimo=true&plural=true&radicais=false&buscaExata=true&page=1&pageSize=10&queryString=Direito&sort=_score&sortBy=desc",
+  "success": true,
+  "statusCode": 202,
+  "urlAnalysis": {
+    "hasParams": true,
+    "params": [
+      [
+        "base",
+        "acordaos"
+      ],
+      [
+        "pesquisa_inteiro_teor",
+        "false"
+      ],
+      [
+        "sinonimo",
+        "true"
+      ],
+      [
+        "plural",
+        "true"
+      ],
+      [
+        "radicais",
+        "false"
+      ],
+      [
+        "buscaExata",
+        "true"
+      ],
+      [
+        "page",
+        "1"
+      ],
+      [
+        "pageSize",
+        "10"
+      ],
+      [
+        "queryString",
+        "Direito"
+      ],
+      [
+        "sort",
+        "_score"
+      ],
+      [
+        "sortBy",
+        "desc"
+      ]
+    ],
+    "baseUrl": "https://jurisprudencia.stf.jus.br/pages/search",
+    "queryString": "?base=acordaos&pesquisa_inteiro_teor=false&sinonimo=true&plural=true&radicais=false&buscaExata=true&page=1&pageSize=10&queryString=Direito&sort=_score&sortBy=desc"
+  },
+  "protections": {
+    "cloudflare_turnstile": false,
+    "recaptcha": false,
+    "hcaptcha": false,
+    "cloudflare_challenge": false,
+    "javascript_required": false,
+    "details": []
+  },
+  "screenshot": "tools\\screenshots\\validation-2025-11-04T14-37-07-201Z.png",
+  "recommendation": "✅ SITE SEM PROTEÇÕES DETECTADAS - Pode usar Puppeteer normal"
+}
