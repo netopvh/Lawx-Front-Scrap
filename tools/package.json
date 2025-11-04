@@ -1,0 +1,21 @@
+{
+  "name": "lawx-validation-tools",
+  "version": "1.0.0",
+  "description": "Ferramentas independentes para validação de sites antes de criar scrapers",
+  "type": "module",
+  "scripts": {
+    "validate": "node validate-site.js"
+  },
+  "keywords": [
+    "validation",
+    "scraping",
+    "captcha",
+    "anti-bot"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^23.10.4"
+  }
+}
+
