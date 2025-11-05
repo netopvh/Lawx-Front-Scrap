@@ -690,6 +690,7 @@ async function uploadToPinecone(items) {
               id: item.numero_processo.replace(/[^0-9]/g, ""), // Remover caracteres especiais do ID
               values: embedding,
               metadata: {
+                sigla_tribunal: "TJSP", // Identificação do tribunal de origem
                 numero_processo: item.numero_processo,
                 classe_assunto: item.classe_assunto || "",
                 relator: item.relator || "",
@@ -856,7 +857,9 @@ async function extractPageData(page) {
     const resultItems = tabsDiv.querySelectorAll('tr.fundocinza1');
 
     resultItems.forEach((tr) => {
-      const item = {};
+      const item = {
+        sigla_tribunal: "TJSP" // Identificação do tribunal de origem
+      };
 
       // Extrair número do processo
       const processoLink = tr.querySelector('a.esajLinkLogin.downloadEmenta[cdacordao]');

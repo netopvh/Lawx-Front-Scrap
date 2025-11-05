@@ -251,7 +251,9 @@ async function extractData(page, fieldsConfig) {
       const resultElements = document.querySelectorAll(resultSelector);
 
       resultElements.forEach((element) => {
-        const item = {};
+        const item = {
+          sigla_tribunal: "STF" // Identificação do tribunal de origem
+        };
 
         // Extrair cada campo configurado
         for (const [fieldName, fieldConfig] of Object.entries(config)) {
@@ -582,6 +584,7 @@ async function uploadToPinecone(items) {
               id: item.numero_processo.replace(/[^0-9]/g, ""), // Remover caracteres especiais do ID
               values: embedding,
               metadata: {
+                sigla_tribunal: "STF", // Identificação do tribunal de origem
                 numero_processo: item.numero_processo,
                 orgao_julgador: item.orgao_julgador || "",
                 relator: item.relator || "",
@@ -664,14 +667,9 @@ async function main() {
     const fieldsConfig = loadConfig("fields.json");
     log("✅ Configurações carregadas", "SUCCESS");
 
-    // Parsear paginação
-    let pages = parsePagination(buscaConfig.page);
-    if (pages === null) {
-      log("⚠️ Modo 'TODAS AS PÁGINAS' não implementado ainda. Usando página 1.", "WARNING");
-      pages = [1];
-    }
-
-    log(`📚 Processando ${pages.length} página(s): ${pages.join(", ")}`, "INFO");
+    // Parsear paginação (será ajustado depois de detectar total de páginas)
+    let paginaConfig = buscaConfig.page;
+    let pages = parsePagination(paginaConfig);
 
     // Conectar ao Scrapeless Cloud Browser
     log("🌐 Conectando ao Scrapeless Cloud Browser...", "INFO");
@@ -774,6 +772,62 @@ async function main() {
       if (!hasResults) {
         log(`⚠️ Página ${pageNum} sem resultados. Pulando...`, "WARNING");
         continue;
+      }
+
+      // Na primeira página, detectar total de páginas se necessário
+      if (pageNum === pages[0] && pages === parsePagination(paginaConfig)) {
+        const totalPages = await page.evaluate(() => {
+          // Tentar encontrar informação de paginação
+          // Exemplo: "Página 1 de 10" ou similar
+          const paginationText = document.body.innerText;
+
+          // Procurar por padrões comuns
+          const patterns = [
+            /página\s+\d+\s+de\s+(\d+)/i,
+            /page\s+\d+\s+of\s+(\d+)/i,
+            /\d+\s+de\s+(\d+)\s+página/i,
+            /total.*?(\d+)\s+página/i
+          ];
+
+          for (const pattern of patterns) {
+            const match = paginationText.match(pattern);
+            if (match && match[1]) {
+              return parseInt(match[1]);
+            }
+          }
+
+          // Tentar contar botões de paginação
+          const pageButtons = document.querySelectorAll('[class*="page"], [class*="pagination"] button, [class*="pagination"] a');
+          const pageNumbers = [];
+          pageButtons.forEach(btn => {
+            const text = btn.textContent?.trim();
+            const num = parseInt(text);
+            if (!isNaN(num)) {
+              pageNumbers.push(num);
+            }
+          });
+
+          if (pageNumbers.length > 0) {
+            return Math.max(...pageNumbers);
+          }
+
+          return null;
+        });
+
+        if (totalPages && totalPages > 1) {
+          log(`📄 Total de páginas detectado: ${totalPages}`, "INFO");
+
+          // Se configuração era "TODAS", ajustar array de páginas
+          if (pages === null || (paginaConfig && String(paginaConfig).trim().toUpperCase() === "TODAS" ||
+              String(paginaConfig).trim().toUpperCase() === "ALL" ||
+              String(paginaConfig).trim().toUpperCase() === "TODOS")) {
+            pages = [];
+            for (let i = 1; i <= totalPages; i++) {
+              pages.push(i);
+            }
+            log(`📚 Processando TODAS as ${totalPages} páginas`, "INFO");
+          }
+        }
       }
 
       // Extrair dados
