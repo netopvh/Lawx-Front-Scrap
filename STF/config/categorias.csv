@@ -1,0 +1,24 @@
+indice,categoria,desc_categoria,codigo_categoria
+1,Direito Constitucional,"Ramo do direito que estuda a Constituição, a organização do Estado e os direitos fundamentais.",01-Direito-Constitucional
+2,Direito Civil,Conjunto de normas que regulam as relações jurídicas entre particulares.,02-Direito-Civil
+3,Direitos Reais e Posse,"Trata da relação das pessoas com as coisas, incluindo propriedade e posse.",03-Direitos-Reais-Posse
+4,Direito Agrário,Ramo do direito que regula as relações jurídicas no campo e a atividade agrária.,04-Direito-Agrario
+5,Direito de Família,"Regula as relações familiares, como casamento, divórcio, filiação e alimentos.",05-Direito-Familia
+6,Direito Empresarial,Disciplina as atividades das empresas e dos empresários.,06-Direito-Empresarial
+7,Direito da Propriedade Intelectual,"Protege as criações da mente, como invenções, obras literárias e artísticas.",07-Direito-Propriedade-Intelectual
+8,Direito Comercial,Regula as relações jurídicas decorrentes do comércio.,08-Direito-Comercial
+9,Direito Administrativo,Disciplina a organização e o funcionamento da administração pública.,09-Direito-Administrativo
+10,Direito Ambiental,Conjunto de normas que visam a proteção do meio ambiente.,10-Direito-Ambiental
+11,Direito Econômico e Concorrencial,Regula a ordem econômica e a concorrência no mercado.,11-Direito-Economico-Concorrencial
+12,Direito Eleitoral,Disciplina o processo eleitoral e os direitos políticos.,12-Direito-Eleitoral
+13,Direito do Consumidor,Protege os direitos dos consumidores nas relações de consumo.,13-Direito-Consumidor
+14,Direito Financeiro e Bancário,Regula as operações financeiras e bancárias.,14-Direito-Financeiro-Bancario
+15,Direito Tributário,Disciplina a arrecadação de tributos e as relações entre fisco e contribuinte.,15-Direito-Tributario
+16,Direito Previdenciário,"Regula a seguridade social, incluindo aposentadorias e pensões.",16-Direito-Previdenciario
+17,Direito da Criança e do Adolescente,Protege os direitos de crianças e adolescentes.,17-Direito-Crianca-Adolescente
+18,Direito Processual Civil,Regula o processo judicial em matéria civil.,18-Direito-Processual-Civil
+19,Direito Penal,Define crimes e suas respectivas penas.,19-Direito-Penal
+20,Direito Processual Penal,Regula o processo judicial em matéria penal.,20-Direito-Processual-Penal
+21,Direito Penal e Processual Penal Militar,Disciplina crimes e processos no âmbito militar.,21-Direito-Penal-Processual-Penal-Militar
+22,Direito do Trabalho,Regula as relações entre empregados e empregadores.,22-Direito-Trabalho
+23,Direito Internacional,Conjunto de normas que regulam as relações entre Estados e organizações internacionais.,23-Direito-Internacional

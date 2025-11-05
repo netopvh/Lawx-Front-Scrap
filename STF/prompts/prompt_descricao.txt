@@ -1,0 +1,8 @@
+Nunca utilize markdown na sua resposta.
+Sempre retorne apenas o texto da descrição, sem texto adicional ou explicações.
+
+Faça uma análise sobre o texto/jurisprudencia a seguir. Na sequencia, gere uma descrição sobre o tema, limitado a 500 caractere.
+Seja inteligente para evitar palavras não relevantes ao tema, trazendo uma sintese inteligente, objetiva e útil para o leitor final.
+Caso haja de nomes de pessoas física, altere para manter a privacidade, mudando para polo ativo, polo passivo.
+
+Na sua resposta não é pra conter escrito Descrição: Não precisa disso, preciso da resposta objetiva.
