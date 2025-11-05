@@ -1,89 +1,139 @@
 {
-  "_comment": "Seletores para extração de dados do STJ/TFR - A DEFINIR após análise da estrutura HTML",
-  
+  "_comment": "Seletores CSS para extração de dados do STJ e TFR - Baseados na estrutura real do site scon.stj.jus.br",
+  "_note": "STJ usa estrutura de divs com classes .documento, .docTitulo, .docDados, .docTexto",
+
   "STJ": {
     "resultados": {
-      "selector": ".resultado-item",
-      "_description": "Container de cada resultado"
+      "selector": ".documento",
+      "_description": "Container de cada resultado (cada acórdão/decisão)",
+      "_alternative_selectors": [".jurisprudencia", "div[class*='documento']"]
     },
-    
+
     "numero_processo": {
-      "selector": ".numero-processo",
-      "_description": "Número do processo"
+      "selector": ".docTitulo",
+      "_description": "Número do processo/acórdão (ex: REsp 1234567/SP)",
+      "_extraction": "text"
     },
-    
+
     "classe": {
-      "selector": ".classe",
-      "_description": "Classe processual"
+      "selector": ".docTitulo",
+      "_description": "Classe processual extraída do título (REsp, AgRg, etc.)",
+      "_extraction": "regex_first_word"
     },
-    
+
     "relator": {
-      "selector": ".relator",
-      "_description": "Ministro relator"
+      "selector": ".docDados",
+      "_description": "Ministro relator - buscar texto após 'Relator'",
+      "_extraction": "text_after_label",
+      "_label": "Relator"
     },
-    
+
+    "orgao_julgador": {
+      "selector": ".docDados",
+      "_description": "Órgão julgador (Turma/Seção) - buscar texto após 'Órgão Julgador'",
+      "_extraction": "text_after_label",
+      "_label": "Órgão Julgador"
+    },
+
     "data_julgamento": {
-      "selector": ".data-julgamento",
-      "_description": "Data de julgamento"
+      "selector": ".docDados",
+      "_description": "Data de julgamento - buscar texto após 'Data do Julgamento'",
+      "_extraction": "text_after_label",
+      "_label": "Data do Julgamento",
+      "_format": "DD/MM/YYYY"
     },
-    
+
     "data_publicacao": {
-      "selector": ".data-publicacao",
-      "_description": "Data de publicação"
+      "selector": ".docDados",
+      "_description": "Data de publicação - buscar texto após 'Data da Publicação'",
+      "_extraction": "text_after_label",
+      "_label": "Data da Publicação",
+      "_format": "DD/MM/YYYY"
     },
-    
+
     "ementa": {
-      "selector": ".ementa",
-      "_description": "Ementa completa"
+      "selector": ".docTexto",
+      "_description": "Ementa completa do acórdão",
+      "_extraction": "text",
+      "_clean": true
     },
-    
+
+    "decisao": {
+      "selector": ".docDados",
+      "_description": "Tipo de decisão (Acórdão, Decisão Monocrática, etc.)",
+      "_extraction": "text_after_label",
+      "_label": "Tipo"
+    },
+
     "link_detalhes": {
-      "selector": "a.link-detalhes",
+      "selector": "a.docLink, a[href*='jurisprudencia']",
       "attribute": "href",
-      "_description": "Link para detalhes"
+      "_description": "Link para inteiro teor do documento"
     }
   },
   
   "TFR": {
+    "_note": "TFR (Tribunal Federal de Recursos) - estrutura similar ao STJ",
+
     "resultados": {
-      "selector": ".resultado-item",
-      "_description": "Container de cada resultado"
+      "selector": ".documento",
+      "_description": "Container de cada resultado do TFR",
+      "_alternative_selectors": [".acordao", "div[class*='documento']"]
     },
-    
-    "numero_processo": {
-      "selector": ".numero-processo",
-      "_description": "Número do processo"
+
+    "numero_acordao": {
+      "selector": ".docTitulo",
+      "_description": "Número do acórdão do TFR",
+      "_extraction": "text"
     },
-    
+
     "classe": {
-      "selector": ".classe",
-      "_description": "Classe processual"
+      "selector": ".docTitulo",
+      "_description": "Classe processual extraída do título",
+      "_extraction": "regex_first_word"
     },
-    
+
     "relator": {
-      "selector": ".relator",
-      "_description": "Ministro relator"
+      "selector": ".docDados",
+      "_description": "Ministro relator - buscar texto após 'Relator'",
+      "_extraction": "text_after_label",
+      "_label": "Relator"
     },
-    
+
     "data_julgamento": {
-      "selector": ".data-julgamento",
-      "_description": "Data de julgamento"
+      "selector": ".docDados",
+      "_description": "Data de julgamento - buscar texto após 'Data do Julgamento'",
+      "_extraction": "text_after_label",
+      "_label": "Data do Julgamento",
+      "_format": "DD/MM/YYYY"
     },
-    
+
     "data_publicacao": {
-      "selector": ".data-publicacao",
-      "_description": "Data de publicação"
+      "selector": ".docDados",
+      "_description": "Data de publicação - buscar texto após 'Data da Publicação'",
+      "_extraction": "text_after_label",
+      "_label": "Data da Publicação",
+      "_format": "DD/MM/YYYY"
     },
-    
+
     "ementa": {
-      "selector": ".ementa",
-      "_description": "Ementa completa"
+      "selector": ".docTexto",
+      "_description": "Ementa completa do acórdão",
+      "_extraction": "text",
+      "_clean": true
     },
-    
+
+    "fonte": {
+      "selector": ".docDados",
+      "_description": "Fonte da publicação - buscar texto após 'Fonte'",
+      "_extraction": "text_after_label",
+      "_label": "Fonte"
+    },
+
     "link_detalhes": {
-      "selector": "a.link-detalhes",
+      "selector": "a.docLink, a[href*='juritfr']",
       "attribute": "href",
-      "_description": "Link para detalhes"
+      "_description": "Link para inteiro teor do documento TFR"
     }
   }
 }
