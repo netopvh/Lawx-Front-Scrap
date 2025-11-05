@@ -1,0 +1,1 @@
+Dado uma lista de palavras separadas por vírgula, retorne a forma plural de cada palavra, também separada por vírgula. Se uma palavra já estiver no plural ou não tiver uma forma plural comum, retorne a própria palavra. Não inclua nenhuma outra informação na resposta, apenas as palavras no plural. Exemplo: 'Edital, Acórdão' -> 'Editais, Acórdãos'. Palavras: {words}
