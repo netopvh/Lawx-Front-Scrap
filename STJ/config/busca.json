@@ -1,0 +1,17 @@
+{
+  "_comment_tribunal": "Tribunal: STJ, TFR, ou vazio para ambos. Use ; para múltiplos (ex: STJ;TFR)",
+  "tribunal": "STJ",
+  
+  "_comment_livre": "Pesquisa livre (qualquer campo)",
+  "livre": "",
+  
+  "_comment_processo": "Número do processo",
+  "processo": "",
+  
+  "_comment_pagina": "Paginação: número (ex: 1), intervalo (ex: 1-5), lista (ex: 1,3,5), ou TODAS/ALL/TODOS para todas as páginas",
+  "pagina": 1,
+  
+  "_comment_max_paginas": "Número máximo de páginas a processar (proteção)",
+  "max_paginas": 3
+}
+

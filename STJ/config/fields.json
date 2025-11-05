@@ -1,0 +1,90 @@
+{
+  "_comment": "Seletores para extração de dados do STJ/TFR - A DEFINIR após análise da estrutura HTML",
+  
+  "STJ": {
+    "resultados": {
+      "selector": ".resultado-item",
+      "_description": "Container de cada resultado"
+    },
+    
+    "numero_processo": {
+      "selector": ".numero-processo",
+      "_description": "Número do processo"
+    },
+    
+    "classe": {
+      "selector": ".classe",
+      "_description": "Classe processual"
+    },
+    
+    "relator": {
+      "selector": ".relator",
+      "_description": "Ministro relator"
+    },
+    
+    "data_julgamento": {
+      "selector": ".data-julgamento",
+      "_description": "Data de julgamento"
+    },
+    
+    "data_publicacao": {
+      "selector": ".data-publicacao",
+      "_description": "Data de publicação"
+    },
+    
+    "ementa": {
+      "selector": ".ementa",
+      "_description": "Ementa completa"
+    },
+    
+    "link_detalhes": {
+      "selector": "a.link-detalhes",
+      "attribute": "href",
+      "_description": "Link para detalhes"
+    }
+  },
+  
+  "TFR": {
+    "resultados": {
+      "selector": ".resultado-item",
+      "_description": "Container de cada resultado"
+    },
+    
+    "numero_processo": {
+      "selector": ".numero-processo",
+      "_description": "Número do processo"
+    },
+    
+    "classe": {
+      "selector": ".classe",
+      "_description": "Classe processual"
+    },
+    
+    "relator": {
+      "selector": ".relator",
+      "_description": "Ministro relator"
+    },
+    
+    "data_julgamento": {
+      "selector": ".data-julgamento",
+      "_description": "Data de julgamento"
+    },
+    
+    "data_publicacao": {
+      "selector": ".data-publicacao",
+      "_description": "Data de publicação"
+    },
+    
+    "ementa": {
+      "selector": ".ementa",
+      "_description": "Ementa completa"
+    },
+    
+    "link_detalhes": {
+      "selector": "a.link-detalhes",
+      "attribute": "href",
+      "_description": "Link para detalhes"
+    }
+  }
+}
+
