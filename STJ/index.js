@@ -495,17 +495,27 @@ async function ensurePineconeIndex() {
  */
 async function connectBrowser() {
   try {
-    const wsEndpoint = process.env.SCRAPELESS_WS_ENDPOINT;
-
-    if (!wsEndpoint) {
-      throw new Error("SCRAPELESS_WS_ENDPOINT não configurado no .env");
-    }
-
     log("🔌 Conectando ao Scrapeless Cloud Browser...", "INFO");
-    log(`   Endpoint: ${wsEndpoint}`, "INFO");
+
+    // Construir query params para Scrapeless
+    const query = new URLSearchParams({
+      token: process.env.SCRAPELESS_TOKEN,
+      proxyCountry: process.env.SCRAPELESS_PROXY_COUNTRY || "BR",
+      sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
+      sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
+      sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
+    });
+
+    const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
+
+    log(`   Proxy Country: ${process.env.SCRAPELESS_PROXY_COUNTRY || "BR"}`, "INFO");
+    log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
+    log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
 
     const browser = await puppeteer.connect({
-      browserWSEndpoint: wsEndpoint,
+      browserWSEndpoint: connectionURL,
+      defaultViewport: null,
+      ignoreHTTPSErrors: true,
     });
 
     log("✅ Conectado ao Scrapeless Cloud Browser", "SUCCESS");
