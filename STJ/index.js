@@ -607,6 +607,7 @@ async function connectBrowser() {
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
+      incognito: true, // Modo anônimo para evitar problemas com cache
     });
 
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
@@ -614,6 +615,7 @@ async function connectBrowser() {
     log(`   Proxy Country: ${process.env.SCRAPELESS_PROXY_COUNTRY || "BR"}`, "INFO");
     log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
     log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
+    log(`   Modo Incognito: true`, "INFO");
 
     const browser = await puppeteer.connect({
       browserWSEndpoint: connectionURL,
