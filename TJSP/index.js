@@ -226,11 +226,52 @@ async function applyAntiDetection(page) {
       Object.defineProperty(navigator, 'languages', {
         get: () => ['pt-BR', 'pt', 'en-US', 'en'],
       });
+
+      // Sobrescrever automation flags
+      delete navigator.__proto__.webdriver;
+
+      // Sobrescrever toString para esconder modificações
+      const originalToString = Function.prototype.toString;
+      Function.prototype.toString = function() {
+        if (this === navigator.permissions.query) {
+          return 'function query() { [native code] }';
+        }
+        return originalToString.call(this);
+      };
     });
 
     console.log(" Técnicas anti-detecção aplicadas.");
   } catch (error) {
     console.error(" Erro ao aplicar anti-detecção:", error);
+  }
+}
+
+/**
+ * Gera delay aleatório entre min e max (em ms)
+ */
+function randomDelay(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * Simula movimento de mouse humano
+ */
+async function humanMouseMove(page, selector) {
+  try {
+    const element = await page.$(selector);
+    if (!element) return;
+
+    const box = await element.boundingBox();
+    if (!box) return;
+
+    // Mover mouse para posição aleatória dentro do elemento
+    const x = box.x + box.width * (0.3 + Math.random() * 0.4);
+    const y = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+    await page.mouse.move(x, y, { steps: randomDelay(5, 15) });
+    await new Promise(resolve => setTimeout(resolve, randomDelay(50, 150)));
+  } catch (error) {
+    // Ignorar erros de movimento de mouse
   }
 }
 
@@ -297,10 +338,75 @@ function closeLog() {
 }
 
 /**
+ * Conecta ao Scrapeless Cloud Browser com configurações
+ */
+async function connectBrowser(attemptNumber = 1) {
+  // Configuração de fingerprint customizado para evitar detecção
+  const fingerprint = {
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    platform: 'Windows',
+    screen: {
+      width: 1920,
+      height: 1080
+    },
+    localization: {
+      languages: ['pt-BR', 'pt', 'en-US', 'en'],
+      timezone: 'America/Sao_Paulo',
+    },
+    args: {
+      '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
+    }
+  };
+
+  // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
+  const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
+  const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+
+  // Configuração do Browser Scrapeless
+  const queryParams = {
+    token: process.env.SCRAPELESS_TOKEN,
+    sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
+    sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
+    sessionName: `${process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper"} - Tentativa ${attemptNumber}`,
+    fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
+    incognito: true, // SEMPRE usar modo anônimo
+  };
+
+  // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
+  if (useProxy) {
+    queryParams.proxyCountry = proxyCountry;
+  }
+
+  const query = new URLSearchParams(queryParams);
+  const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
+
+  log(`🔗 Conectando ao browser Scrapeless (Tentativa ${attemptNumber})...`, "INFO");
+  log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
+  log(`   Modo Incognito: ✅ Ativado`, "INFO");
+  log("🖐️ Usando fingerprint customizado:", "INFO");
+  log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
+  log(`   Platform: ${fingerprint.platform}`, "INFO");
+  log(`   Screen: ${fingerprint.screen.width}x${fingerprint.screen.height}`, "INFO");
+  log(`   Timezone: ${fingerprint.localization.timezone}`, "INFO");
+  log(`   Languages: ${fingerprint.localization.languages.join(', ')}`, "INFO");
+
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: connectionURL,
+    defaultViewport: null,
+  });
+
+  log(`✅ Conectado ao browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
+  return browser;
+}
+
+/**
  * Função principal para execução local
  */
 async function main() {
   let browser = null;
+  const maxRetries = 3; // Máximo de tentativas
+  let currentAttempt = 0;
+  let success = false;
 
   try {
     // Garantir que os diretórios necessários existem
@@ -310,70 +416,72 @@ async function main() {
     initializeLog();
     log("=== INICIANDO SCRAPER TJSP ===", "INFO");
 
-    // Configuração de fingerprint customizado para evitar detecção
-    const fingerprint = {
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      platform: 'Windows',
-      screen: {
-        width: 1920,
-        height: 1080
-      },
-      localization: {
-        languages: ['pt-BR', 'pt', 'en-US', 'en'],
-        timezone: 'America/Sao_Paulo',
-      },
-      args: {
-        '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
-      }
-    };
-
-    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
-    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
-    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
-
-    // Configuração do Browser Scrapeless
-    const queryParams = {
-      token: process.env.SCRAPELESS_TOKEN,
-      sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
-      sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
-      sessionName: process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper",
-      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)), // Adicionar fingerprint customizado
-    };
-
-    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
-    if (useProxy) {
-      queryParams.proxyCountry = proxyCountry;
-    }
-
-    const query = new URLSearchParams(queryParams);
-    const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
-
-    log("🔗 Conectando ao browser Scrapeless...", "INFO");
-    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
-    log("🖐️ Usando fingerprint customizado:", "INFO");
-    log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
-    log(`   Platform: ${fingerprint.platform}`, "INFO");
-    log(`   Screen: ${fingerprint.screen.width}x${fingerprint.screen.height}`, "INFO");
-    log(`   Timezone: ${fingerprint.localization.timezone}`, "INFO");
-    log(`   Languages: ${fingerprint.localization.languages.join(', ')}`, "INFO");
-
-    browser = await puppeteer.connect({
-      browserWSEndpoint: connectionURL,
-      defaultViewport: null,
-    });
-    log(`✅ Conectado ao browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
-
-    // Executar o scraper
     const url = process.env.TJSP_URL || "https://esaj.tjsp.jus.br/cjsg/resultadoCompleta.do";
-    await runScraper(browser, url);
+
+    // Loop de tentativas
+    while (currentAttempt < maxRetries && !success) {
+      currentAttempt++;
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "INFO");
+      log(`🔄 TENTATIVA ${currentAttempt} DE ${maxRetries}`, "INFO");
+      log("═══════════════════════════════════════════════════════", "INFO");
+
+      try {
+        // Conectar ao browser (nova sessão a cada tentativa)
+        browser = await connectBrowser(currentAttempt);
+
+        // Executar o scraper
+        await runScraper(browser, url);
+
+        // Se chegou aqui, foi sucesso
+        success = true;
+        log("", "SUCCESS");
+        log("═══════════════════════════════════════════════════════", "SUCCESS");
+        log("✅ SCRAPING CONCLUÍDO COM SUCESSO!", "SUCCESS");
+        log("═══════════════════════════════════════════════════════", "SUCCESS");
+
+      } catch (error) {
+        log(`❌ Erro na tentativa ${currentAttempt}: ${error.message}`, "ERROR");
+
+        // Fechar browser atual antes de tentar novamente
+        if (browser) {
+          try {
+            await browser.close();
+            log("🔒 Browser fechado", "INFO");
+          } catch (closeError) {
+            log(`⚠️ Erro ao fechar browser: ${closeError.message}`, "WARNING");
+          }
+          browser = null;
+        }
+
+        // Se foi erro de bypass do CAPTCHA e ainda há tentativas, tentar novamente
+        if (error.message.includes("Bypass do reCAPTCHA falhou") && currentAttempt < maxRetries) {
+          log("", "INFO");
+          log("🔄 Detectado falha no bypass do CAPTCHA", "WARNING");
+          log(`🔄 Aguardando 5 segundos antes de tentar novamente com NOVA SESSÃO...`, "INFO");
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (currentAttempt >= maxRetries) {
+          // Esgotou tentativas
+          throw new Error(`Falha após ${maxRetries} tentativas: ${error.message}`);
+        } else {
+          // Outro tipo de erro, não tentar novamente
+          throw error;
+        }
+      }
+    }
 
   } catch (error) {
     log(`❌ Erro fatal no main(): ${error.message}`, "ERROR");
     if (error.stack) log(error.stack, "ERROR");
   } finally {
     if (browser) {
-      await browser.close();
-      log("🔒 Browser fechado", "INFO");
+      try {
+        await browser.close();
+        log("🔒 Browser fechado", "INFO");
+      } catch (closeError) {
+        log(`⚠️ Erro ao fechar browser: ${closeError.message}`, "WARNING");
+      }
     }
 
     // Fechar log
@@ -1043,7 +1151,22 @@ async function navigateToPage(page, pageNumber) {
  */
 async function fillTextField(page, friendlyName, fieldMapping, value) {
   log(`✍️ Preenchendo '${fieldMapping.label}': "${value}"`, "INFO");
-  await page.type(fieldMapping.selector, String(value), { delay: 50 });
+
+  // Mover mouse para o campo antes de digitar
+  await humanMouseMove(page, fieldMapping.selector);
+  await new Promise(resolve => setTimeout(resolve, randomDelay(100, 300)));
+
+  // Clicar no campo para focar
+  await page.click(fieldMapping.selector);
+  await new Promise(resolve => setTimeout(resolve, randomDelay(100, 200)));
+
+  // Digitar com delay aleatório entre 100-200ms (mais humano)
+  await page.type(fieldMapping.selector, String(value), {
+    delay: randomDelay(100, 200)
+  });
+
+  // Pequeno delay após digitar
+  await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
 }
 
 /**
@@ -1052,10 +1175,18 @@ async function fillTextField(page, friendlyName, fieldMapping, value) {
 async function fillCheckbox(page, friendlyName, fieldMapping, value) {
   if (value) {
     log(`☑️ Marcando '${fieldMapping.label}'`, "INFO");
+
+    // Mover mouse para o checkbox
+    await humanMouseMove(page, fieldMapping.selector);
+    await new Promise(resolve => setTimeout(resolve, randomDelay(100, 300)));
+
     await page.evaluate((selector) => {
       const checkbox = document.querySelector(selector);
       if (checkbox && !checkbox.checked) checkbox.click();
     }, fieldMapping.selector);
+
+    // Delay após marcar
+    await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
   }
 }
 
@@ -1079,12 +1210,21 @@ async function fillCheckboxGroup(page, friendlyName, fieldMapping, values) {
     });
   }, fieldMapping.selector);
 
+  await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
+
   // Marcar os selecionados
   for (const techValue of technicalValues) {
+    // Mover mouse para cada checkbox
+    const checkboxSelector = `${fieldMapping.selector}[value="${techValue}"]`;
+    await humanMouseMove(page, checkboxSelector);
+    await new Promise(resolve => setTimeout(resolve, randomDelay(100, 200)));
+
     await page.evaluate((selector, value) => {
       const checkbox = document.querySelector(`${selector}[value="${value}"]`);
       if (checkbox && !checkbox.checked) checkbox.click();
     }, fieldMapping.selector, techValue);
+
+    await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
   }
 }
 
@@ -1096,10 +1236,19 @@ async function fillRadio(page, friendlyName, fieldMapping, value) {
   const technicalValue = convertValue(friendlyName, value);
 
   log(`📊 Selecionando '${fieldMapping.label}': ${value}`, "INFO");
+
+  // Mover mouse para o radio button
+  const radioSelector = `${fieldMapping.selector}[value="${technicalValue}"]`;
+  await humanMouseMove(page, radioSelector);
+  await new Promise(resolve => setTimeout(resolve, randomDelay(100, 300)));
+
   await page.evaluate((selector, val) => {
     const radio = document.querySelector(`${selector}[value="${val}"]`);
     if (radio && !radio.checked) radio.click();
   }, fieldMapping.selector, technicalValue);
+
+  // Delay após selecionar
+  await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
 }
 
 /**
@@ -1367,8 +1516,16 @@ async function runScraper(browser, url) {
     log("🔍 CLICANDO NO BOTÃO PESQUISAR", "INFO");
     log("═══════════════════════════════════════════════════════", "INFO");
 
+    // Delay antes de clicar (comportamento humano)
+    await new Promise(resolve => setTimeout(resolve, randomDelay(500, 1000)));
+
+    // Mover mouse para o botão antes de clicar
+    const submitSelector = 'input[type="submit"][value="Pesquisar"]';
+    await humanMouseMove(page, submitSelector);
+    await new Promise(resolve => setTimeout(resolve, randomDelay(300, 600)));
+
     // Clicar no botão sem aguardar navegação (pode ter CAPTCHA)
-    await page.click('input[type="submit"][value="Pesquisar"]');
+    await page.click(submitSelector);
     log("✅ Botão clicado!", "SUCCESS");
 
     // Aguardar um pouco para ver se CAPTCHA aparece
@@ -1437,14 +1594,38 @@ async function runScraper(browser, url) {
 
     // Validar se a div#tabs existe
     log("🔍 Validando presença da div#tabs...", "INFO");
-    const tabsExists = await page.evaluate(() => {
-      return document.querySelector('div#tabs') !== null;
+    const pageCheck = await page.evaluate(() => {
+      const tabs = document.querySelector('div#tabs');
+      const noResults = document.querySelector('div.mensagemAlerta, div.mensagemAviso');
+      const noResultsText = noResults ? (noResults.innerText || noResults.textContent || '').trim() : '';
+
+      return {
+        tabsExists: tabs !== null,
+        noResults: noResults !== null,
+        noResultsText: noResultsText
+      };
     });
 
-    if (!tabsExists) {
+    if (!pageCheck.tabsExists) {
       log("⚠️ Div#tabs não encontrada na página!", "WARNING");
 
-      // Screenshot de erro (div#tabs não encontrada)
+      // Verificar se é mensagem de "nenhum resultado"
+      if (pageCheck.noResults) {
+        log(`ℹ️ Mensagem encontrada: "${pageCheck.noResultsText}"`, "INFO");
+        log("✅ Pesquisa executada com sucesso, mas não retornou resultados", "SUCCESS");
+
+        // Screenshot de "sem resultados"
+        const noResultsFilename = getTimestampedFilename("no-results", "png");
+        const noResultsScreenshot = path.join("screenshots", noResultsFilename);
+        await page.screenshot({ path: noResultsScreenshot, fullPage: true });
+        log(`📸 Screenshot de "sem resultados" capturado: ${noResultsScreenshot}`, "INFO");
+
+        // Não é erro - apenas não há resultados
+        log("🏁 Scraping concluído (sem resultados para o período)", "SUCCESS");
+        return;
+      }
+
+      // Screenshot de erro (div#tabs não encontrada e sem mensagem de "sem resultados")
       const errorFilename = getTimestampedFilename("error", "png");
       const errorScreenshot = path.join("screenshots", errorFilename);
       await page.screenshot({ path: errorScreenshot, fullPage: true });

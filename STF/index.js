@@ -725,6 +725,7 @@ async function main() {
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STF Scraper",
+      incognito: true, // SEMPRE usar modo anônimo
     };
 
     // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
@@ -734,6 +735,9 @@ async function main() {
 
     const query = new URLSearchParams(queryParams);
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
+
+    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
+    log(`   Modo Incognito: ✅ Ativado`, "INFO");
 
     browser = await Promise.race([
       puppeteer.connect({

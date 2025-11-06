@@ -622,9 +622,9 @@ async function connectBrowser() {
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
+    log(`   Modo Incognito: ✅ Ativado`, "INFO");
     log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
     log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
-    log(`   Modo Incognito: true`, "INFO");
 
     const browser = await puppeteer.connect({
       browserWSEndpoint: connectionURL,
