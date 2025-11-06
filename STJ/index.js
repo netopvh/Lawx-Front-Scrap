@@ -223,6 +223,12 @@ async function onCaptchaFinished(page, timeout = 45_000) {
   log("⏳ Aguardando detecção e resolução do CAPTCHA...", "INFO");
 
   return new Promise(async (resolve, reject) => {
+    // Contador para screenshots periódicos
+    let screenshotCounter = 0;
+    const screenshotInterval = 30000; // 30 segundos
+    let lastScreenshotTime = Date.now();
+    let checkInterval; // Declarar aqui para poder usar no cleanup
+
     // Listener para detecção de CAPTCHA
     const onDetected = (msg) => {
       captchaDetected = true;
@@ -241,10 +247,12 @@ async function onCaptchaFinished(page, timeout = 45_000) {
       resolve({ method: "CDP", msg });
     };
 
-    // Cleanup de listeners
+    // Cleanup de listeners e intervals
     const cleanup = () => {
       emitter.removeListener("Captcha.detected", onDetected);
       emitter.removeListener("Captcha.solveFinished", onSolved);
+      if (checkInterval) clearInterval(checkInterval);
+      if (timeoutId) clearTimeout(timeoutId);
     };
 
     // Registrar listeners
@@ -258,13 +266,8 @@ async function onCaptchaFinished(page, timeout = 45_000) {
       reject(new Error(`Timeout de ${timeout/1000}s esperando resolução do CAPTCHA (tempo decorrido: ${elapsedTime}s)`));
     }, timeout);
 
-    // Contador para screenshots periódicos
-    let screenshotCounter = 0;
-    const screenshotInterval = 30000; // 30 segundos
-    let lastScreenshotTime = Date.now();
-
     // Verificação visual periódica (apenas se CAPTCHA NÃO foi detectado pelo CDP)
-    const checkInterval = setInterval(async () => {
+    checkInterval = setInterval(async () => {
       try {
         // Se CAPTCHA foi detectado pelo CDP, aguardar apenas o evento de resolução
         if (captchaDetected && !captchaSolved) {
@@ -696,6 +699,16 @@ async function navigateToSTJ(page) {
 
       // Aguardar um pouco para garantir que a página está totalmente carregada
       await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Capturar screenshot do formulário após CAPTCHA resolvido
+      try {
+        const formFilename = getTimestampedFilename("formulario-pos-captcha", "png");
+        const formScreenshot = path.join("screenshots", formFilename);
+        await page.screenshot({ path: formScreenshot, fullPage: true });
+        log(`📸 Screenshot do formulário salvo: ${formScreenshot}`, "SUCCESS");
+      } catch (screenshotError) {
+        log(`⚠️ Erro ao capturar screenshot do formulário: ${screenshotError.message}`, "WARNING");
+      }
 
       return true;
     } catch (error) {
