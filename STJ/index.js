@@ -58,6 +58,23 @@ const LOG_DIR = "logs";
 const SCREENSHOT_DIR = "screenshots";
 const SCRAP_DIR = "scraps";
 
+// Mapeamento de campos amigáveis (busca.json) para nomes técnicos (DOM)
+const FIELD_MAPPING = {
+  "Tribunal": "tribunal",
+  "Pesquisa livre": "livre",
+  "Número do processo": "processo",
+  "Classe processual": "classe",
+  "Unidade Federativa": "uf",
+  "Data de publicação (início)": "dtpb1",
+  "Data de publicação (fim)": "dtpb2",
+  "Data de decisão (início)": "dtde1",
+  "Data de decisão (fim)": "dtde2",
+  "Ementa": "ementa",
+  "Nota": "nota",
+  "Número da Súmula": "sumula",
+  "Pagina": "pagina",
+};
+
 let logFilePath = null;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -584,61 +601,85 @@ async function navigateToSTJ(page) {
 }
 
 /**
+ * Converte campos amigáveis para campos técnicos
+ */
+function convertFriendlyFieldsToTechnical(buscaConfig) {
+  const technicalConfig = {};
+
+  // Converter campos amigáveis para técnicos
+  for (const [friendlyName, value] of Object.entries(buscaConfig)) {
+    // Ignorar campos que começam com _
+    if (friendlyName.startsWith("_")) {
+      continue;
+    }
+
+    // Se existe mapeamento, usar o nome técnico
+    const technicalName = FIELD_MAPPING[friendlyName] || friendlyName;
+    technicalConfig[technicalName] = value;
+  }
+
+  return technicalConfig;
+}
+
+/**
  * Preenche o formulário de busca do STJ
  */
 async function fillSearchForm(page, buscaConfig, tribunal) {
   try {
     log(`📝 Preenchendo formulário de busca para tribunal: ${tribunal}`, "INFO");
 
+    // Converter campos amigáveis para técnicos
+    const config = convertFriendlyFieldsToTechnical(buscaConfig);
+
     // Selecionar tribunal (STJ, TFR, ou ambos)
-    if (buscaConfig.tribunal) {
+    if (config.tribunal) {
       const tribunalValue = tribunal === "STJ" ? "STJ" : "TFR";
       await page.select('select[name="b"]', tribunalValue);
       log(`   ✓ Tribunal selecionado: ${tribunalValue}`, "INFO");
     }
 
     // Preencher campo de pesquisa livre
-    if (buscaConfig.livre) {
-      await page.type('input[name="livre"]', buscaConfig.livre);
-      log(`   ✓ Pesquisa livre: ${buscaConfig.livre}`, "INFO");
+    if (config.livre) {
+      await page.type('input[name="livre"]', config.livre);
+      log(`   ✓ Pesquisa livre: ${config.livre}`, "INFO");
     }
 
     // Preencher número do processo
-    if (buscaConfig.processo) {
-      await page.type('input[name="processo"]', buscaConfig.processo);
-      log(`   ✓ Processo: ${buscaConfig.processo}`, "INFO");
+    if (config.processo) {
+      await page.type('input[name="processo"]', config.processo);
+      log(`   ✓ Processo: ${config.processo}`, "INFO");
     }
 
     // Preencher classe
-    if (buscaConfig.classe) {
-      await page.type('input[name="classe"]', buscaConfig.classe);
-      log(`   ✓ Classe: ${buscaConfig.classe}`, "INFO");
+    if (config.classe) {
+      await page.type('input[name="classe"]', config.classe);
+      log(`   ✓ Classe: ${config.classe}`, "INFO");
     }
 
     // Selecionar UF
-    if (buscaConfig.uf) {
-      await page.select('select[name="uf"]', buscaConfig.uf);
-      log(`   ✓ UF: ${buscaConfig.uf}`, "INFO");
+    if (config.uf) {
+      await page.select('select[name="uf"]', config.uf);
+      log(`   ✓ UF: ${config.uf}`, "INFO");
     }
 
     // Preencher datas de publicação
-    if (buscaConfig.dtpb1) {
-      await page.type('input[name="dtpb1"]', buscaConfig.dtpb1);
-      log(`   ✓ Data publicação início: ${buscaConfig.dtpb1}`, "INFO");
+    if (config.dtpb1) {
+      await page.type('input[name="dtpb1"]', config.dtpb1);
+      log(`   ✓ Data publicação início: ${config.dtpb1}`, "INFO");
     }
-    if (buscaConfig.dtpb2) {
-      await page.type('input[name="dtpb2"]', buscaConfig.dtpb2);
-      log(`   ✓ Data publicação fim: ${buscaConfig.dtpb2}`, "INFO");
+    if (config.dtpb2) {
+      await page.type('input[name="dtpb2"]', config.dtpb2);
+      log(`   ✓ Data publicação fim: ${config.dtpb2}`, "INFO");
     }
 
     // Preencher datas de decisão
-    if (buscaConfig.dtde1) {
-      await page.type('input[name="dtde1"]', buscaConfig.dtde1);
-      log(`   ✓ Data decisão início: ${buscaConfig.dtde1}`, "INFO");
+    if (config.dtde1) {
+      await page.type('input[name="dtde1"]', config.dtde1);
+      log(`   ✓ Data decisão início: ${config.dtde1}`, "INFO");
     }
-    if (buscaConfig.dtde2) {
-      await page.type('input[name="dtde2"]', buscaConfig.dtde2);
-      log(`   ✓ Data decisão fim: ${buscaConfig.dtde2}`, "INFO");
+    if (config.dtde2) {
+      await page.type('input[name="dtde2"]', config.dtde2);
+      log(`   ✓ Data decisão fim: ${config.dtde2}`, "INFO");
     }
 
     log("✅ Formulário preenchido com sucesso", "SUCCESS");

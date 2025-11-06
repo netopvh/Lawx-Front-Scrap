@@ -45,6 +45,21 @@ const LOG_DIR = "logs";
 const SCREENSHOT_DIR = "screenshots";
 const SCRAP_DIR = "scraps";
 
+// Mapeamento de campos amigáveis (busca.json) para nomes técnicos (URL params)
+const FIELD_MAPPING = {
+  "Pesquisa livre": "queryString",
+  "Base de dados": "base",
+  "Pesquisar no inteiro teor": "pesquisa_inteiro_teor",
+  "Pesquisar com sinônimos": "sinonimo",
+  "Pesquisar no plural": "plural",
+  "Pesquisar radicais": "radicais",
+  "Busca exata": "buscaExata",
+  "Pagina": "page",
+  "Resultados por página": "pageSize",
+  "Ordenar por": "sort",
+  "Ordem": "sortBy",
+};
+
 let logFilePath = null;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -123,25 +138,49 @@ function loadConfig(filename) {
 // FUNÇÕES DE URL
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Converte campos amigáveis para campos técnicos
+ */
+function convertFriendlyFieldsToTechnical(buscaConfig) {
+  const technicalConfig = {};
+
+  // Converter campos amigáveis para técnicos
+  for (const [friendlyName, value] of Object.entries(buscaConfig)) {
+    // Ignorar campos que começam com _
+    if (friendlyName.startsWith("_")) {
+      continue;
+    }
+
+    // Se existe mapeamento, usar o nome técnico
+    const technicalName = FIELD_MAPPING[friendlyName] || friendlyName;
+    technicalConfig[technicalName] = value;
+  }
+
+  return technicalConfig;
+}
+
 function buildSearchUrl(params) {
+  // Converter campos amigáveis para técnicos
+  const technicalParams = convertFriendlyFieldsToTechnical(params);
+
   const queryParams = new URLSearchParams();
 
   // Adicionar parâmetros obrigatórios
-  if (params.queryString) queryParams.set("queryString", params.queryString);
-  if (params.base) queryParams.set("base", params.base);
+  if (technicalParams.queryString) queryParams.set("queryString", technicalParams.queryString);
+  if (technicalParams.base) queryParams.set("base", technicalParams.base);
 
   // Adicionar parâmetros opcionais
-  if (params.pesquisa_inteiro_teor !== undefined) {
-    queryParams.set("pesquisa_inteiro_teor", params.pesquisa_inteiro_teor);
+  if (technicalParams.pesquisa_inteiro_teor !== undefined) {
+    queryParams.set("pesquisa_inteiro_teor", technicalParams.pesquisa_inteiro_teor);
   }
-  if (params.sinonimo !== undefined) queryParams.set("sinonimo", params.sinonimo);
-  if (params.plural !== undefined) queryParams.set("plural", params.plural);
-  if (params.radicais !== undefined) queryParams.set("radicais", params.radicais);
-  if (params.buscaExata !== undefined) queryParams.set("buscaExata", params.buscaExata);
-  if (params.page !== undefined) queryParams.set("page", params.page);
-  if (params.pageSize !== undefined) queryParams.set("pageSize", params.pageSize);
-  if (params.sort) queryParams.set("sort", params.sort);
-  if (params.sortBy) queryParams.set("sortBy", params.sortBy);
+  if (technicalParams.sinonimo !== undefined) queryParams.set("sinonimo", technicalParams.sinonimo);
+  if (technicalParams.plural !== undefined) queryParams.set("plural", technicalParams.plural);
+  if (technicalParams.radicais !== undefined) queryParams.set("radicais", technicalParams.radicais);
+  if (technicalParams.buscaExata !== undefined) queryParams.set("buscaExata", technicalParams.buscaExata);
+  if (technicalParams.page !== undefined) queryParams.set("page", technicalParams.page);
+  if (technicalParams.pageSize !== undefined) queryParams.set("pageSize", technicalParams.pageSize);
+  if (technicalParams.sort) queryParams.set("sort", technicalParams.sort);
+  if (technicalParams.sortBy) queryParams.set("sortBy", technicalParams.sortBy);
 
   return `${STF_BASE_URL}?${queryParams.toString()}`;
 }
@@ -664,8 +703,9 @@ async function main() {
     const fieldsConfig = loadConfig("fields.json");
     log("✅ Configurações carregadas", "SUCCESS");
 
-    // Parsear paginação
-    let pages = parsePagination(buscaConfig.page);
+    // Parsear paginação (aceita tanto "Pagina" quanto "page")
+    const paginaValue = buscaConfig["Pagina"] || buscaConfig.page || "1";
+    let pages = parsePagination(paginaValue);
     if (pages === null) {
       log("⚠️ Modo 'TODAS AS PÁGINAS' não implementado ainda. Usando página 1.", "WARNING");
       pages = [1];

@@ -1,15 +1,31 @@
 {
-  "_comment_base": "Opções: acordaos | repercussao_geral | sumulas | decisoes | informativos",
-  "queryString": "Advogados",
-  "base": "acordaos",
-  "pesquisa_inteiro_teor": false,
-  "sinonimo": true,
-  "plural": true,
-  "radicais": false,
-  "buscaExata": true,
-  "page": "1-3",
-  "pageSize": 10,
-  "sort": "_score",
-  "sortBy": "desc"
+  "_comentario": "Configuração de busca para STF - Preencha os campos como aparecem no formulário. Campos vazios serão ignorados.",
+  "_instrucoes": "Os nomes dos campos abaixo correspondem exatamente às labels do formulário do STF para facilitar o preenchimento.",
+
+  "Pesquisa livre": "Advogados",
+  "Base de dados": "acordaos",
+  "Pesquisar no inteiro teor": false,
+  "Pesquisar com sinônimos": true,
+  "Pesquisar no plural": true,
+  "Pesquisar radicais": false,
+  "Busca exata": true,
+  "Pagina": "1-3",
+  "Resultados por página": 10,
+  "Ordenar por": "_score",
+  "Ordem": "desc",
+
+  "_ajuda": {
+    "Pesquisa livre": "Termo de busca (ex: Advogados, Direito Civil)",
+    "Base de dados": "Opções: 'acordaos', 'repercussao_geral', 'sumulas', 'decisoes', 'informativos'",
+    "Pesquisar no inteiro teor": "true ou false - Buscar no texto completo",
+    "Pesquisar com sinônimos": "true ou false - Incluir sinônimos na busca",
+    "Pesquisar no plural": "true ou false - Incluir plural na busca",
+    "Pesquisar radicais": "true ou false - Buscar radicais das palavras",
+    "Busca exata": "true ou false - Buscar termo exato",
+    "Pagina": "Formato: '1' (única página), '1-3' (intervalo), '1;3;5' (páginas específicas), 'TODAS' ou 'ALL' ou 'TODOS' (todas as páginas)",
+    "Resultados por página": "Número de resultados por página (ex: 10, 20, 50)",
+    "Ordenar por": "Campo para ordenação (ex: '_score', 'data_julgamento')",
+    "Ordem": "Opções: 'asc' (crescente) ou 'desc' (decrescente)"
+  }
 }
 
