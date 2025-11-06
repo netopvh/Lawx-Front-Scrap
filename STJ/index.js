@@ -31,9 +31,13 @@ import fs from "fs";
 import path from "path";
 import OpenAI from "openai";
 import { Pinecone } from "@pinecone-database/pinecone";
+import { EventEmitter } from "events";
 
 // Carregar variáveis de ambiente
 dotenv.config();
+
+// EventEmitter para comunicação entre funções (CAPTCHA)
+const emitter = new EventEmitter();
 
 // Inicializar cliente OpenAI
 const openai = new OpenAI({
@@ -94,6 +98,176 @@ function closeLog() {
     log("=== LOG FINALIZADO ===", "INFO");
     log("═══════════════════════════════════════════════════════", "INFO");
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FUNÇÕES DE CAPTCHA (Cloudflare Turnstile)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Adiciona listeners para eventos de CAPTCHA do Scrapeless
+ * Usa EventEmitter para comunicação entre funções (padrão da documentação)
+ */
+async function addCaptchaListener(page) {
+  try {
+    const client = await page.createCDPSession();
+
+    client.on("Captcha.detected", (msg) => {
+      log("🔍 CAPTCHA DETECTADO pelo Scrapeless (evento CDP)", "INFO");
+      log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
+      emitter.emit("Captcha.detected", msg);
+    });
+
+    client.on("Captcha.solveFinished", async (msg) => {
+      log("✅ CAPTCHA RESOLVIDO pelo Scrapeless (evento CDP)", "SUCCESS");
+      log(`   Detalhes: ${JSON.stringify(msg)}`, "INFO");
+      emitter.emit("Captcha.solveFinished", msg);
+    });
+
+    log("👂 Listeners CDP de CAPTCHA configurados com sucesso", "SUCCESS");
+    return client;
+  } catch (error) {
+    log(`⚠️ Erro ao configurar listeners CDP: ${error.message}`, "WARNING");
+    log("   Continuando com verificação visual de CAPTCHA", "INFO");
+    return null;
+  }
+}
+
+/**
+ * Verifica visualmente se o CAPTCHA foi resolvido (não há elementos de CAPTCHA visíveis)
+ */
+async function isCaptchaResolved(page) {
+  try {
+    const result = await page.evaluate(() => {
+      // Verificar iframes de CAPTCHA
+      const iframes = Array.from(document.querySelectorAll('iframe'));
+      const captchaIframes = iframes.filter(iframe => {
+        const src = iframe.src || '';
+        const title = iframe.title || '';
+        return (src.includes('recaptcha') || src.includes('captcha') ||
+                src.includes('turnstile') || src.includes('cloudflare') ||
+                title.includes('recaptcha') || title.includes('captcha')) &&
+               iframe.offsetParent !== null;
+      });
+
+      // Verificar divs/overlays de CAPTCHA
+      const captchaDivs = Array.from(document.querySelectorAll(
+        'div[class*="captcha"], div[id*="captcha"], div[class*="turnstile"], div[id*="turnstile"]'
+      ));
+      const visibleCaptchaDivs = captchaDivs.filter(div => {
+        const style = window.getComputedStyle(div);
+        return div.offsetParent !== null &&
+               style.display !== 'none' &&
+               style.visibility !== 'hidden' &&
+               style.opacity !== '0';
+      });
+
+      // Verificar se formulário está acessível
+      const form = document.querySelector('form');
+      const formVisible = form && form.offsetParent !== null;
+
+      return {
+        captchaIframesCount: captchaIframes.length,
+        captchaDivsCount: visibleCaptchaDivs.length,
+        formVisible: formVisible,
+        resolved: captchaIframes.length === 0 && visibleCaptchaDivs.length === 0 && formVisible
+      };
+    });
+
+    return result;
+  } catch (error) {
+    log(`⚠️ Erro ao verificar CAPTCHA visualmente: ${error.message}`, "WARNING");
+    return { resolved: false, error: error.message };
+  }
+}
+
+/**
+ * Aguarda a resolução do CAPTCHA com abordagem inteligente:
+ * 1. Aguarda evento "Captcha.detected" do Scrapeless (indica que CAPTCHA foi encontrado)
+ * 2. Aguarda evento "Captcha.solveFinished" (indica que foi resolvido)
+ * 3. Se não houver CAPTCHA, verifica visualmente e continua
+ * Timeout padrão: 45 segundos
+ */
+async function onCaptchaFinished(page, timeout = 45_000) {
+  const startTime = Date.now();
+  let captchaDetected = false;
+  let captchaSolved = false;
+
+  log("⏳ Aguardando detecção e resolução do CAPTCHA...", "INFO");
+
+  return new Promise(async (resolve, reject) => {
+    // Listener para detecção de CAPTCHA
+    const onDetected = (msg) => {
+      captchaDetected = true;
+      log("🔍 CAPTCHA detectado - aguardando resolução pelo Scrapeless...", "INFO");
+    };
+
+    // Listener para resolução de CAPTCHA
+    const onSolved = (msg) => {
+      captchaSolved = true;
+      log("✅ CAPTCHA resolvido pelo Scrapeless (evento CDP)!", "SUCCESS");
+      cleanup();
+
+      const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      log(`⏱️ CAPTCHA resolvido em ${elapsedTime}s`, "SUCCESS");
+
+      resolve({ method: "CDP", msg });
+    };
+
+    // Cleanup de listeners
+    const cleanup = () => {
+      emitter.removeListener("Captcha.detected", onDetected);
+      emitter.removeListener("Captcha.solveFinished", onSolved);
+    };
+
+    // Registrar listeners
+    emitter.on("Captcha.detected", onDetected);
+    emitter.on("Captcha.solveFinished", onSolved);
+
+    // Timeout
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+      reject(new Error(`Timeout de ${timeout/1000}s esperando resolução do CAPTCHA (tempo decorrido: ${elapsedTime}s)`));
+    }, timeout);
+
+    // Verificação visual periódica (apenas se CAPTCHA NÃO foi detectado pelo CDP)
+    const checkInterval = setInterval(async () => {
+      try {
+        // Se CAPTCHA foi detectado pelo CDP, aguardar apenas o evento de resolução
+        if (captchaDetected && !captchaSolved) {
+          log("   ⏳ CAPTCHA detectado - aguardando Scrapeless resolver...", "INFO");
+          return;
+        }
+
+        // Se CAPTCHA já foi resolvido, parar verificação
+        if (captchaSolved) {
+          clearInterval(checkInterval);
+          return;
+        }
+
+        // Verificar visualmente se não há CAPTCHA ou se já foi resolvido
+        const captchaStatus = await isCaptchaResolved(page);
+
+        if (captchaStatus.resolved) {
+          // Se CAPTCHA nunca foi detectado pelo CDP, significa que não havia CAPTCHA
+          if (!captchaDetected) {
+            log("✅ Nenhum CAPTCHA detectado - página já está liberada!", "SUCCESS");
+            cleanup();
+            clearInterval(checkInterval);
+            clearTimeout(timeoutId);
+
+            const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+            log(`⏱️ Verificação concluída em ${elapsedTime}s`, "SUCCESS");
+
+            resolve({ method: "No-CAPTCHA", status: captchaStatus });
+          }
+        }
+      } catch (error) {
+        log(`⚠️ Erro na verificação visual: ${error.message}`, "WARNING");
+      }
+    }, 2000); // Verificar a cada 2 segundos
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -313,11 +487,313 @@ async function ensurePineconeIndex() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// FUNÇÃO PRINCIPAL (PLACEHOLDER)
+// FUNÇÕES DE NAVEGAÇÃO E SCRAPING
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Conecta ao Scrapeless Cloud Browser
+ */
+async function connectBrowser() {
+  try {
+    const wsEndpoint = process.env.SCRAPELESS_WS_ENDPOINT;
+
+    if (!wsEndpoint) {
+      throw new Error("SCRAPELESS_WS_ENDPOINT não configurado no .env");
+    }
+
+    log("🔌 Conectando ao Scrapeless Cloud Browser...", "INFO");
+    log(`   Endpoint: ${wsEndpoint}`, "INFO");
+
+    const browser = await puppeteer.connect({
+      browserWSEndpoint: wsEndpoint,
+    });
+
+    log("✅ Conectado ao Scrapeless Cloud Browser", "SUCCESS");
+    return browser;
+  } catch (error) {
+    log(`❌ Erro ao conectar ao browser: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+/**
+ * Navega para a página de busca do STJ e aguarda resolução do CAPTCHA
+ */
+async function navigateToSTJ(page) {
+  try {
+    const url = "https://scon.stj.jus.br/SCON/";
+
+    log("🛡️ Aplicando técnicas anti-detecção...", "INFO");
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+      Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+      window.chrome = { runtime: {} };
+    });
+
+    // Configurar listener de CAPTCHA ANTES de navegar
+    log("👂 Configurando listener de CAPTCHA...", "INFO");
+    await addCaptchaListener(page);
+
+    log(`🌐 Navegando para: ${url}`, "INFO");
+    await page.goto(url, { timeout: 60000, waitUntil: "domcontentloaded" });
+
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+    log("🔐 AGUARDANDO RESOLUÇÃO DO CAPTCHA", "INFO");
+    log("═══════════════════════════════════════════════════════", "INFO");
+
+    try {
+      const result = await onCaptchaFinished(page, 45000); // 45 segundos
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("✅ CAPTCHA RESOLVIDO COM SUCESSO!", "SUCCESS");
+      log(`   Método usado: ${result.method}`, "SUCCESS");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("", "INFO");
+
+      // Aguardar um pouco para garantir que a página está totalmente carregada
+      await page.waitForTimeout(2000);
+
+      return true;
+    } catch (error) {
+      log("", "ERROR");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+      log("❌ FALHA NA RESOLUÇÃO DO CAPTCHA", "ERROR");
+      log(`   Erro: ${error.message}`, "ERROR");
+      log("═══════════════════════════════════════════════════════", "ERROR");
+      log("", "ERROR");
+
+      throw error;
+    }
+  } catch (error) {
+    log(`❌ Erro ao navegar para STJ: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+/**
+ * Preenche o formulário de busca do STJ
+ */
+async function fillSearchForm(page, buscaConfig, tribunal) {
+  try {
+    log(`📝 Preenchendo formulário de busca para tribunal: ${tribunal}`, "INFO");
+
+    // Selecionar tribunal (STJ, TFR, ou ambos)
+    if (buscaConfig.tribunal) {
+      const tribunalValue = tribunal === "STJ" ? "STJ" : "TFR";
+      await page.select('select[name="b"]', tribunalValue);
+      log(`   ✓ Tribunal selecionado: ${tribunalValue}`, "INFO");
+    }
+
+    // Preencher campo de pesquisa livre
+    if (buscaConfig.livre) {
+      await page.type('input[name="livre"]', buscaConfig.livre);
+      log(`   ✓ Pesquisa livre: ${buscaConfig.livre}`, "INFO");
+    }
+
+    // Preencher número do processo
+    if (buscaConfig.processo) {
+      await page.type('input[name="processo"]', buscaConfig.processo);
+      log(`   ✓ Processo: ${buscaConfig.processo}`, "INFO");
+    }
+
+    // Preencher classe
+    if (buscaConfig.classe) {
+      await page.type('input[name="classe"]', buscaConfig.classe);
+      log(`   ✓ Classe: ${buscaConfig.classe}`, "INFO");
+    }
+
+    // Selecionar UF
+    if (buscaConfig.uf) {
+      await page.select('select[name="uf"]', buscaConfig.uf);
+      log(`   ✓ UF: ${buscaConfig.uf}`, "INFO");
+    }
+
+    // Preencher datas de publicação
+    if (buscaConfig.dtpb1) {
+      await page.type('input[name="dtpb1"]', buscaConfig.dtpb1);
+      log(`   ✓ Data publicação início: ${buscaConfig.dtpb1}`, "INFO");
+    }
+    if (buscaConfig.dtpb2) {
+      await page.type('input[name="dtpb2"]', buscaConfig.dtpb2);
+      log(`   ✓ Data publicação fim: ${buscaConfig.dtpb2}`, "INFO");
+    }
+
+    // Preencher datas de decisão
+    if (buscaConfig.dtde1) {
+      await page.type('input[name="dtde1"]', buscaConfig.dtde1);
+      log(`   ✓ Data decisão início: ${buscaConfig.dtde1}`, "INFO");
+    }
+    if (buscaConfig.dtde2) {
+      await page.type('input[name="dtde2"]', buscaConfig.dtde2);
+      log(`   ✓ Data decisão fim: ${buscaConfig.dtde2}`, "INFO");
+    }
+
+    log("✅ Formulário preenchido com sucesso", "SUCCESS");
+    return true;
+  } catch (error) {
+    log(`❌ Erro ao preencher formulário: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+/**
+ * Submete o formulário e aguarda resultados
+ */
+async function submitForm(page) {
+  try {
+    log("🚀 Submetendo formulário...", "INFO");
+
+    // Clicar no botão de pesquisar
+    const submitButton = await page.$('input[type="submit"], button[type="submit"]');
+    if (!submitButton) {
+      throw new Error("Botão de submissão não encontrado");
+    }
+
+    await submitButton.click();
+    log("   ✓ Formulário submetido", "INFO");
+
+    // Aguardar navegação ou resultados
+    await page.waitForNavigation({ timeout: 30000, waitUntil: "domcontentloaded" }).catch(() => {
+      log("   ⚠️ Timeout na navegação - verificando se resultados foram carregados", "WARNING");
+    });
+
+    // Verificar se CAPTCHA foi detectado após o clique
+    log("🔍 Verificando se CAPTCHA foi detectado após submissão...", "INFO");
+
+    try {
+      const result = await onCaptchaFinished(page, 45000);
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("✅ CAPTCHA PÓS-SUBMISSÃO RESOLVIDO!", "SUCCESS");
+      log(`   Método usado: ${result.method}`, "SUCCESS");
+      log("═══════════════════════════════════════════════════════", "SUCCESS");
+      log("", "INFO");
+    } catch (error) {
+      // Se não houver CAPTCHA, continuar normalmente
+      if (error.message.includes("Timeout")) {
+        log("   ✓ Nenhum CAPTCHA detectado após submissão", "INFO");
+      } else {
+        throw error;
+      }
+    }
+
+    // Aguardar resultados carregarem
+    await page.waitForTimeout(3000);
+
+    log("✅ Formulário submetido com sucesso", "SUCCESS");
+    return true;
+  } catch (error) {
+    log(`❌ Erro ao submeter formulário: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+/**
+ * Extrai dados de um resultado usando os seletores do fields.json
+ */
+function extractTextAfterLabel(text, label) {
+  if (!text || !label) return null;
+
+  const regex = new RegExp(`${label}\\s*:?\\s*(.+?)(?=\\n|$)`, "i");
+  const match = text.match(regex);
+
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * Extrai dados de uma página de resultados
+ */
+async function extractResults(page, fieldsConfig, tribunal) {
+  try {
+    log(`📊 Extraindo resultados para tribunal: ${tribunal}`, "INFO");
+
+    const config = fieldsConfig[tribunal];
+    if (!config) {
+      throw new Error(`Configuração de campos não encontrada para tribunal: ${tribunal}`);
+    }
+
+    const results = await page.evaluate((config, tribunal) => {
+      const items = [];
+      const containers = document.querySelectorAll(config.resultados.selector);
+
+      containers.forEach((container) => {
+        const item = { sigla_tribunal: tribunal };
+
+        // Extrair número do processo/acórdão
+        const tituloEl = container.querySelector(config.numero_processo.selector);
+        if (tituloEl) {
+          item.numero_processo = tituloEl.textContent.trim();
+        }
+
+        // Extrair dados gerais (relator, datas, etc.)
+        const dadosEl = container.querySelector(config.relator?.selector || config.data_julgamento?.selector);
+        if (dadosEl) {
+          const dadosText = dadosEl.textContent;
+
+          // Extrair relator
+          const relatorMatch = dadosText.match(/Relator\s*:?\s*(.+?)(?=\n|Órgão|Data|$)/i);
+          if (relatorMatch) {
+            item.relator = relatorMatch[1].trim();
+          }
+
+          // Extrair órgão julgador
+          const orgaoMatch = dadosText.match(/Órgão\s+Julgador\s*:?\s*(.+?)(?=\n|Data|$)/i);
+          if (orgaoMatch) {
+            item.orgao_julgador = orgaoMatch[1].trim();
+          }
+
+          // Extrair data de julgamento
+          const dataJulgMatch = dadosText.match(/Data\s+do\s+Julgamento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+          if (dataJulgMatch) {
+            item.data_julgamento = dataJulgMatch[1];
+          }
+
+          // Extrair data de publicação
+          const dataPubMatch = dadosText.match(/Data\s+da\s+Publicação\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+          if (dataPubMatch) {
+            item.data_publicacao = dataPubMatch[1];
+          }
+        }
+
+        // Extrair ementa
+        const ementaEl = container.querySelector(config.ementa.selector);
+        if (ementaEl) {
+          item.ementa = ementaEl.textContent.trim();
+        }
+
+        // Extrair link
+        const linkEl = container.querySelector(config.link_detalhes.selector);
+        if (linkEl) {
+          item.link_detalhes = linkEl.href;
+        }
+
+        if (item.numero_processo || item.ementa) {
+          items.push(item);
+        }
+      });
+
+      return items;
+    }, config, tribunal);
+
+    log(`✅ Extraídos ${results.length} resultados`, "SUCCESS");
+    return results;
+  } catch (error) {
+    log(`❌ Erro ao extrair resultados: ${error.message}`, "ERROR");
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FUNÇÃO PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════
 
 async function main() {
   let browser = null;
+  let page = null;
 
   try {
     initLog();
@@ -333,41 +809,154 @@ async function main() {
     const fieldsConfig = loadConfig("fields.json");
     log("✅ Configurações carregadas", "SUCCESS");
 
+    // Verificar Pinecone
+    log("🔍 Verificando índice Pinecone...", "INFO");
+    const pineconeReady = await ensurePineconeIndex();
+    if (!pineconeReady) {
+      throw new Error("Falha ao verificar/criar índice Pinecone");
+    }
+
     // Determinar tribunal(is) a processar
     const tribunalConfig = buscaConfig.tribunal || "";
-    const tribunais = tribunalConfig
+    let tribunais = tribunalConfig
       .split(";")
       .map((t) => t.trim())
       .filter((t) => t);
 
     if (tribunais.length === 0 || tribunalConfig === "") {
-      tribunais.push("STJ", "TFR");
+      tribunais = ["STJ", "TFR"];
     }
 
     log(`📋 Tribunais a processar: ${tribunais.join(", ")}`, "INFO");
 
-    // ⚠️ PROBLEMA: Cloudflare Turnstile bloqueia acesso
-    log("", "INFO");
-    log("⚠️⚠️⚠️ ATENÇÃO ⚠️⚠️⚠️", "WARNING");
-    log("O site do STJ usa Cloudflare Turnstile que bloqueia acesso automatizado.", "WARNING");
-    log("O Scrapeless detecta mas NÃO consegue resolver automaticamente.", "WARNING");
-    log("", "WARNING");
-    log("SOLUÇÕES POSSÍVEIS:", "WARNING");
-    log("1. Verificar se STJ oferece API oficial", "WARNING");
-    log("2. Implementar scraping manual assistido (usuário resolve CAPTCHA)", "WARNING");
-    log("3. Usar serviço especializado (FlareSolverr, 2Captcha, Anti-Captcha)", "WARNING");
-    log("4. Analisar screenshots fornecidos e implementar seletores corretos", "WARNING");
-    log("", "WARNING");
-    log("Por enquanto, este scraper está INCOMPLETO e NÃO FUNCIONAL.", "WARNING");
-    log("⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️", "WARNING");
-    log("", "INFO");
+    // Conectar ao browser
+    browser = await connectBrowser();
+    page = await browser.newPage();
 
-    // TODO: Implementar scraping quando solução para Cloudflare for encontrada
+    await page.setViewport({ width: 1920, height: 1080 });
+
+    // Navegar para STJ e resolver CAPTCHA
+    await navigateToSTJ(page);
+
+    // Processar cada tribunal
+    for (const tribunal of tribunais) {
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "INFO");
+      log(`📋 PROCESSANDO TRIBUNAL: ${tribunal}`, "INFO");
+      log("═══════════════════════════════════════════════════════", "INFO");
+
+      try {
+        // Preencher formulário
+        await fillSearchForm(page, buscaConfig, tribunal);
+
+        // Submeter formulário
+        await submitForm(page);
+
+        // Tirar screenshot dos resultados
+        const screenshotPath = path.join(SCREENSHOT_DIR, `stj_${tribunal}_results_${Date.now()}.png`);
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        log(`📸 Screenshot salvo: ${screenshotPath}`, "INFO");
+
+        // Extrair resultados
+        const results = await extractResults(page, fieldsConfig, tribunal);
+
+        if (results.length === 0) {
+          log(`⚠️ Nenhum resultado encontrado para ${tribunal}`, "WARNING");
+          continue;
+        }
+
+        log(`📊 Processando ${results.length} resultados...`, "INFO");
+
+        // Processar cada resultado
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+
+          log("", "INFO");
+          log(`─────────────────────────────────────────────────────`, "INFO");
+          log(`📄 Processando resultado ${i + 1}/${results.length}`, "INFO");
+          log(`   Processo: ${result.numero_processo || "N/A"}`, "INFO");
+          log(`   Tribunal: ${result.sigla_tribunal}`, "INFO");
+
+          try {
+            // Categorizar ementa
+            const categoriaData = await categorizeEmenta(result.ementa || "");
+
+            // Gerar embedding
+            const embedding = await generateEmbedding(result.ementa || "");
+
+            if (!embedding) {
+              log(`⚠️ Falha ao gerar embedding - pulando resultado`, "WARNING");
+              continue;
+            }
+
+            // Preparar metadata
+            const metadata = {
+              numero_processo: result.numero_processo || "",
+              sigla_tribunal: result.sigla_tribunal,
+              relator: result.relator || "",
+              orgao_julgador: result.orgao_julgador || "",
+              data_julgamento: result.data_julgamento || "",
+              data_publicacao: result.data_publicacao || "",
+              ementa: result.ementa || "",
+              link_detalhes: result.link_detalhes || "",
+              categoria: categoriaData.categoria,
+              codigo_categoria: categoriaData.codigo_categoria,
+              desc_categoria: categoriaData.desc_categoria,
+            };
+
+            // Upload para Pinecone
+            const namespace = `${result.sigla_tribunal}-${categoriaData.categoria}`;
+            const vectorId = `${result.sigla_tribunal}_${result.numero_processo || Date.now()}_${i}`;
+
+            log(`📤 Enviando para Pinecone...`, "INFO");
+            log(`   Namespace: ${namespace}`, "INFO");
+            log(`   Vector ID: ${vectorId}`, "INFO");
+
+            const index = pinecone.index(process.env.PINECONE_INDEX_NAME);
+            await index.namespace(namespace).upsert([
+              {
+                id: vectorId,
+                values: embedding,
+                metadata: metadata,
+              },
+            ]);
+
+            log(`✅ Resultado ${i + 1} enviado com sucesso!`, "SUCCESS");
+
+            // Salvar em arquivo JSON
+            const scrapPath = path.join(SCRAP_DIR, `${vectorId}.json`);
+            fs.writeFileSync(scrapPath, JSON.stringify({ ...metadata, vector_id: vectorId }, null, 2), "utf-8");
+            log(`💾 Salvo em: ${scrapPath}`, "INFO");
+
+          } catch (error) {
+            log(`❌ Erro ao processar resultado ${i + 1}: ${error.message}`, "ERROR");
+            continue;
+          }
+        }
+
+        log("", "INFO");
+        log(`✅ Tribunal ${tribunal} processado com sucesso!`, "SUCCESS");
+
+      } catch (error) {
+        log(`❌ Erro ao processar tribunal ${tribunal}: ${error.message}`, "ERROR");
+        continue;
+      }
+    }
+
+    log("", "INFO");
+    log("═══════════════════════════════════════════════════════", "SUCCESS");
+    log("✅ SCRAPER FINALIZADO COM SUCESSO!", "SUCCESS");
+    log("═══════════════════════════════════════════════════════", "SUCCESS");
 
   } catch (error) {
     log(`❌ Erro fatal no main(): ${error.message}`, "ERROR");
     if (error.stack) log(error.stack, "ERROR");
   } finally {
+    if (page) {
+      await page.close();
+      log("📄 Página fechada", "INFO");
+    }
+
     if (browser) {
       await browser.close();
       log("🔒 Browser fechado", "INFO");
