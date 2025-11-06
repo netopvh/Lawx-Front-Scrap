@@ -531,7 +531,7 @@ async function connectBrowser() {
  */
 async function navigateToSTJ(page) {
   try {
-    const url = "https://scon.stj.jus.br/SCON/";
+    const url = STJ_BASE_URL;
 
     log("🛡️ Aplicando técnicas anti-detecção...", "INFO");
     await page.evaluateOnNewDocument(() => {
