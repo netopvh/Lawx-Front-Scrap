@@ -327,19 +327,29 @@ async function main() {
       }
     };
 
+    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
+    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
+    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+
     // Configuração do Browser Scrapeless
-    const query = new URLSearchParams({
+    const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
-      proxyCountry: process.env.SCRAPELESS_PROXY_COUNTRY || "BR",
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper",
       fingerprint: encodeURIComponent(JSON.stringify(fingerprint)), // Adicionar fingerprint customizado
-    });
+    };
 
+    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
+    if (useProxy) {
+      queryParams.proxyCountry = proxyCountry;
+    }
+
+    const query = new URLSearchParams(queryParams);
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     log("🔗 Conectando ao browser Scrapeless...", "INFO");
+    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
     log("🖐️ Usando fingerprint customizado:", "INFO");
     log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
     log(`   Platform: ${fingerprint.platform}`, "INFO");
@@ -351,7 +361,7 @@ async function main() {
       browserWSEndpoint: connectionURL,
       defaultViewport: null,
     });
-    log("✅ Conectado ao browser!", "SUCCESS");
+    log(`✅ Conectado ao browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
 
     // Executar o scraper
     const url = process.env.TJSP_URL || "https://esaj.tjsp.jus.br/cjsg/resultadoCompleta.do";

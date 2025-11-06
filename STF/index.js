@@ -716,14 +716,23 @@ async function main() {
     // Conectar ao Scrapeless Cloud Browser
     log("🌐 Conectando ao Scrapeless Cloud Browser...", "INFO");
 
-    const query = new URLSearchParams({
+    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
+    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
+    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+
+    const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
-      proxyCountry: "BR", // Usar sempre proxy BR (funciona melhor com sites brasileiros)
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STF Scraper",
-    });
+    };
 
+    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
+    if (useProxy) {
+      queryParams.proxyCountry = proxyCountry;
+    }
+
+    const query = new URLSearchParams(queryParams);
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     browser = await Promise.race([
@@ -737,7 +746,7 @@ async function main() {
       )
     ]);
 
-    log("✅ Conectado ao Scrapeless Cloud Browser com Proxy Brasil!", "SUCCESS");
+    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
 
     // Aguardar antes de criar a página (Scrapeless precisa de tempo para estabilizar)
     const initialDelay = 3000;
@@ -749,6 +758,29 @@ async function main() {
 
     // Ignorar erros de certificado SSL
     await page.setBypassCSP(true);
+
+    // Adicionar listener para capturar requests e responses
+    page.on('request', request => {
+      const url = request.url();
+      if (url.includes('stf.jus.br')) {
+        log(`   🌐 REQUEST: ${request.method()} ${url}`, "INFO");
+      }
+    });
+
+    page.on('response', response => {
+      const url = response.url();
+      if (url.includes('stf.jus.br')) {
+        log(`   📥 RESPONSE: ${response.status()} ${url}`, "INFO");
+
+        // Verificar se há redirecionamento
+        if (response.status() >= 300 && response.status() < 400) {
+          const location = response.headers()['location'];
+          if (location) {
+            log(`   🔀 REDIRECT para: ${location}`, "WARNING");
+          }
+        }
+      }
+    });
 
     log("✅ Nova página criada", "SUCCESS");
 
@@ -783,11 +815,33 @@ async function main() {
             log(`   🔄 Tentativa ${gotoAttempt}/${maxGotoAttempts}...`, "INFO");
           }
 
+          // Log da URL antes de navegar
+          log(`   📍 Navegando para: ${url}`, "INFO");
+
           await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+          // Log da URL após navegação (pode ter havido redirecionamento)
+          const currentUrl = page.url();
+          log(`   📍 URL atual após navegação: ${currentUrl}`, "INFO");
+
+          if (currentUrl !== url) {
+            log(`   ⚠️ REDIRECIONAMENTO DETECTADO!`, "WARNING");
+            log(`      De: ${url}`, "WARNING");
+            log(`      Para: ${currentUrl}`, "WARNING");
+          }
+
           pageLoaded = true;
           log("✅ Página carregada", "SUCCESS");
 
         } catch (gotoError) {
+          // Capturar URL atual mesmo em caso de erro
+          try {
+            const errorUrl = page.url();
+            log(`   📍 URL no momento do erro: ${errorUrl}`, "WARNING");
+          } catch (urlError) {
+            log(`   ⚠️ Não foi possível obter URL atual`, "WARNING");
+          }
+
           log(`⚠️ Erro ao carregar (tentativa ${gotoAttempt}): ${gotoError.message}`, "WARNING");
 
           // Se for erro de túnel e ainda temos tentativas, aguardar mais tempo

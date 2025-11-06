@@ -3,7 +3,7 @@
   "_instrucoes": "Os nomes dos campos abaixo correspondem exatamente às labels do formulário do STJ para facilitar o preenchimento.",
 
   "Tribunal": "STJ",
-  "Pesquisa livre": "",
+  "Pesquisa livre": "Advogado",
   "Número do processo": "",
   "Classe processual": "",
   "Unidade Federativa": "",

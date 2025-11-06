@@ -600,19 +600,28 @@ async function connectBrowser() {
   try {
     log("🔌 Conectando ao Scrapeless Cloud Browser...", "INFO");
 
+    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
+    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
+    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+
     // Construir query params para Scrapeless
-    const query = new URLSearchParams({
+    const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
-      proxyCountry: process.env.SCRAPELESS_PROXY_COUNTRY || "BR",
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
       incognito: true, // Modo anônimo para evitar problemas com cache
-    });
+    };
 
+    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
+    if (useProxy) {
+      queryParams.proxyCountry = proxyCountry;
+    }
+
+    const query = new URLSearchParams(queryParams);
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
-    log(`   Proxy Country: ${process.env.SCRAPELESS_PROXY_COUNTRY || "BR"}`, "INFO");
+    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
     log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
     log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
     log(`   Modo Incognito: true`, "INFO");
@@ -623,7 +632,7 @@ async function connectBrowser() {
       ignoreHTTPSErrors: true,
     });
 
-    log("✅ Conectado ao Scrapeless Cloud Browser", "SUCCESS");
+    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}`, "SUCCESS");
     return browser;
   } catch (error) {
     log(`❌ Erro ao conectar ao browser: ${error.message}`, "ERROR");
