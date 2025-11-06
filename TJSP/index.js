@@ -352,6 +352,11 @@ async function connectBrowser(attemptNumber = 1) {
     localization: {
       languages: ['pt-BR', 'pt', 'en-US', 'en'],
       timezone: 'America/Sao_Paulo',
+      geolocation: {
+        latitude: -23.5505, // São Paulo, Brasil
+        longitude: -46.6333,
+        accuracy: 100
+      }
     },
     args: {
       '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
