@@ -151,6 +151,16 @@ async function addCaptchaListener(page) {
 }
 
 /**
+ * Gera nome de arquivo com timestamp
+ */
+function getTimestampedFilename(prefix = "shot", extension = "png") {
+  const now = new Date();
+  const date = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const time = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS
+  return `${prefix}_${date}_${time}.${extension}`;
+}
+
+/**
  * Verifica visualmente se o CAPTCHA foi resolvido (não há elementos de CAPTCHA visíveis)
  */
 async function isCaptchaResolved(page) {
@@ -248,12 +258,85 @@ async function onCaptchaFinished(page, timeout = 45_000) {
       reject(new Error(`Timeout de ${timeout/1000}s esperando resolução do CAPTCHA (tempo decorrido: ${elapsedTime}s)`));
     }, timeout);
 
+    // Contador para screenshots periódicos
+    let screenshotCounter = 0;
+    const screenshotInterval = 30000; // 30 segundos
+    let lastScreenshotTime = Date.now();
+
     // Verificação visual periódica (apenas se CAPTCHA NÃO foi detectado pelo CDP)
     const checkInterval = setInterval(async () => {
       try {
         // Se CAPTCHA foi detectado pelo CDP, aguardar apenas o evento de resolução
         if (captchaDetected && !captchaSolved) {
           log("   ⏳ CAPTCHA detectado - aguardando Scrapeless resolver...", "INFO");
+
+          // Capturar screenshot periódico a cada 30s
+          const now = Date.now();
+          if (now - lastScreenshotTime >= screenshotInterval) {
+            screenshotCounter++;
+            lastScreenshotTime = now;
+
+            try {
+              const filename = getTimestampedFilename(`captcha-waiting-${screenshotCounter}`, "png");
+              const screenshotPath = path.join("screenshots", filename);
+              await page.screenshot({ path: screenshotPath, fullPage: true });
+              log(`📸 Screenshot periódico ${screenshotCounter} salvo: ${screenshotPath}`, "INFO");
+
+              // Identificar tipo de CAPTCHA na página
+              const captchaType = await page.evaluate(() => {
+                const types = [];
+
+                // Cloudflare Turnstile
+                if (document.querySelector('iframe[src*="challenges.cloudflare.com"]') ||
+                    document.querySelector('[id*="cf-turnstile"]') ||
+                    document.querySelector('[class*="cf-turnstile"]')) {
+                  types.push('Cloudflare Turnstile');
+                }
+
+                // reCAPTCHA v2
+                if (document.querySelector('iframe[src*="google.com/recaptcha"]') ||
+                    document.querySelector('.g-recaptcha')) {
+                  types.push('reCAPTCHA v2');
+                }
+
+                // reCAPTCHA v3
+                if (document.querySelector('.grecaptcha-badge')) {
+                  types.push('reCAPTCHA v3');
+                }
+
+                // hCaptcha
+                if (document.querySelector('iframe[src*="hcaptcha.com"]') ||
+                    document.querySelector('.h-captcha')) {
+                  types.push('hCaptcha');
+                }
+
+                // Verificar iframes genéricos
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                const iframeInfo = iframes.map(iframe => ({
+                  src: iframe.src,
+                  id: iframe.id,
+                  className: iframe.className
+                }));
+
+                return {
+                  types: types.length > 0 ? types : ['Desconhecido'],
+                  iframeCount: iframes.length,
+                  iframes: iframeInfo
+                };
+              });
+
+              log(`🔍 Tipo(s) de CAPTCHA detectado(s): ${captchaType.types.join(', ')}`, "INFO");
+              log(`   Total de iframes na página: ${captchaType.iframeCount}`, "INFO");
+              if (captchaType.iframes.length > 0) {
+                captchaType.iframes.forEach((iframe, idx) => {
+                  log(`   iframe[${idx}]: src="${iframe.src.substring(0, 60)}..." id="${iframe.id}" class="${iframe.className}"`, "INFO");
+                });
+              }
+            } catch (screenshotError) {
+              log(`⚠️ Erro ao capturar screenshot periódico: ${screenshotError.message}`, "WARNING");
+            }
+          }
+
           return;
         }
 
@@ -563,7 +646,31 @@ async function navigateToSTJ(page) {
     await addCaptchaListener(page);
 
     log(`🌐 Navegando para: ${url}`, "INFO");
-    await page.goto(url, { timeout: 60000, waitUntil: "domcontentloaded" });
+
+    // Tentar navegar com retry (problemas de proxy podem ocorrer)
+    let navigationSuccess = false;
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    while (!navigationSuccess && attempt < maxAttempts) {
+      attempt++;
+      try {
+        if (attempt > 1) {
+          log(`   🔄 Tentativa ${attempt}/${maxAttempts}...`, "INFO");
+        }
+        await page.goto(url, { timeout: 90000, waitUntil: "domcontentloaded" });
+        navigationSuccess = true;
+        log("✅ Página carregada com sucesso", "SUCCESS");
+      } catch (navError) {
+        if (attempt < maxAttempts) {
+          log(`⚠️ Erro na tentativa ${attempt}: ${navError.message}`, "WARNING");
+          log(`   Aguardando 5s antes de tentar novamente...`, "INFO");
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else {
+          throw navError;
+        }
+      }
+    }
 
     log("", "INFO");
     log("═══════════════════════════════════════════════════════", "INFO");
@@ -571,7 +678,14 @@ async function navigateToSTJ(page) {
     log("═══════════════════════════════════════════════════════", "INFO");
 
     try {
-      const result = await onCaptchaFinished(page, 45000); // 45 segundos
+      // Tentar aguardar resolução do CAPTCHA OU aparecimento do formulário
+      const result = await Promise.race([
+        onCaptchaFinished(page, 120000), // 120 segundos
+        page.waitForSelector('input[name="livre"]', { timeout: 120000 }).then(() => ({
+          method: 'form-appeared',
+          success: true
+        }))
+      ]);
 
       log("", "INFO");
       log("═══════════════════════════════════════════════════════", "SUCCESS");
@@ -581,7 +695,7 @@ async function navigateToSTJ(page) {
       log("", "INFO");
 
       // Aguardar um pouco para garantir que a página está totalmente carregada
-      await page.waitForTimeout(2000);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       return true;
     } catch (error) {
@@ -591,6 +705,117 @@ async function navigateToSTJ(page) {
       log(`   Erro: ${error.message}`, "ERROR");
       log("═══════════════════════════════════════════════════════", "ERROR");
       log("", "ERROR");
+
+      // Capturar screenshot de timeout do CAPTCHA
+      const isCaptchaTimeoutError = error.message.includes("Timeout") && error.message.includes("CAPTCHA");
+
+      if (isCaptchaTimeoutError) {
+        try {
+          const timeoutFilename = getTimestampedFilename("captcha-timeout", "png");
+          const timeoutScreenshot = path.join("screenshots", timeoutFilename);
+          await page.screenshot({ path: timeoutScreenshot, fullPage: true });
+          log(`📸 Screenshot de timeout do CAPTCHA salvo: ${timeoutScreenshot}`, "ERROR");
+
+          // Identificar tipo de CAPTCHA na página no momento do timeout
+          const captchaType = await page.evaluate(() => {
+            const types = [];
+            const details = {};
+
+            // Cloudflare Turnstile
+            const cfTurnstile = document.querySelector('iframe[src*="challenges.cloudflare.com"]') ||
+                                document.querySelector('[id*="cf-turnstile"]') ||
+                                document.querySelector('[class*="cf-turnstile"]');
+            if (cfTurnstile) {
+              types.push('Cloudflare Turnstile');
+              details.cloudflare = {
+                element: cfTurnstile.tagName,
+                id: cfTurnstile.id,
+                className: cfTurnstile.className,
+                src: cfTurnstile.src || 'N/A'
+              };
+            }
+
+            // reCAPTCHA v2
+            const recaptchaV2 = document.querySelector('iframe[src*="google.com/recaptcha"]') ||
+                                document.querySelector('.g-recaptcha');
+            if (recaptchaV2) {
+              types.push('reCAPTCHA v2');
+              details.recaptchaV2 = {
+                element: recaptchaV2.tagName,
+                className: recaptchaV2.className
+              };
+            }
+
+            // reCAPTCHA v3
+            const recaptchaV3 = document.querySelector('.grecaptcha-badge');
+            if (recaptchaV3) {
+              types.push('reCAPTCHA v3');
+            }
+
+            // hCaptcha
+            const hcaptcha = document.querySelector('iframe[src*="hcaptcha.com"]') ||
+                            document.querySelector('.h-captcha');
+            if (hcaptcha) {
+              types.push('hCaptcha');
+            }
+
+            // Informações gerais da página
+            const pageInfo = {
+              title: document.title,
+              url: window.location.href,
+              bodyText: document.body ? document.body.innerText.substring(0, 500) : 'N/A'
+            };
+
+            // Todos os iframes
+            const iframes = Array.from(document.querySelectorAll('iframe'));
+            const iframeInfo = iframes.map(iframe => ({
+              src: iframe.src,
+              id: iframe.id,
+              className: iframe.className,
+              width: iframe.width,
+              height: iframe.height
+            }));
+
+            return {
+              types: types.length > 0 ? types : ['Desconhecido'],
+              details,
+              pageInfo,
+              iframeCount: iframes.length,
+              iframes: iframeInfo
+            };
+          });
+
+          log("", "ERROR");
+          log("═══════════════════════════════════════════════════════", "ERROR");
+          log("🔍 ANÁLISE DO CAPTCHA NO MOMENTO DO TIMEOUT", "ERROR");
+          log("═══════════════════════════════════════════════════════", "ERROR");
+          log(`📋 Tipo(s) de CAPTCHA: ${captchaType.types.join(', ')}`, "ERROR");
+          log(`📄 Título da página: ${captchaType.pageInfo.title}`, "ERROR");
+          log(`🌐 URL: ${captchaType.pageInfo.url}`, "ERROR");
+          log(`🖼️ Total de iframes: ${captchaType.iframeCount}`, "ERROR");
+
+          if (Object.keys(captchaType.details).length > 0) {
+            log("📊 Detalhes do CAPTCHA:", "ERROR");
+            log(JSON.stringify(captchaType.details, null, 2), "ERROR");
+          }
+
+          if (captchaType.iframes.length > 0) {
+            log("🔗 Iframes encontrados:", "ERROR");
+            captchaType.iframes.forEach((iframe, idx) => {
+              log(`   [${idx}] src: ${iframe.src}`, "ERROR");
+              log(`       id: "${iframe.id}" class: "${iframe.className}"`, "ERROR");
+              log(`       size: ${iframe.width}x${iframe.height}`, "ERROR");
+            });
+          }
+
+          log("📝 Texto da página (primeiros 500 chars):", "ERROR");
+          log(captchaType.pageInfo.bodyText, "ERROR");
+          log("═══════════════════════════════════════════════════════", "ERROR");
+          log("", "ERROR");
+        } catch (screenshotError) {
+          log(`❌ Erro ao capturar screenshot de timeout: ${screenshotError.message}`, "ERROR");
+        }
+      }
 
       throw error;
     }
