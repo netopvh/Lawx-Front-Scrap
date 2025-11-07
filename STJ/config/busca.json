@@ -1,0 +1,38 @@
+{
+  "_comentario": "Configuração de busca para STJ/TFR - Preencha os campos como aparecem no formulário. Campos vazios serão ignorados.",
+  "_instrucoes": "Os nomes dos campos abaixo correspondem exatamente às labels do formulário do STJ para facilitar o preenchimento.",
+
+  "Tribunal": "STJ",
+  "Pesquisa livre": "Advogado",
+  "Número do processo": "",
+  "Classe processual": "",
+  "Unidade Federativa": "",
+
+  "Data de publicação (início)": "",
+  "Data de publicação (fim)": "",
+  "Data de decisão (início)": "",
+  "Data de decisão (fim)": "",
+
+  "Ementa": "",
+  "Nota": "",
+  "Número da Súmula": "",
+
+  "Pagina": "1",
+
+  "_ajuda": {
+    "Tribunal": "Opções: 'STJ', 'TFR', ou 'STJ;TFR' para ambos",
+    "Pesquisa livre": "Busca em qualquer campo do documento",
+    "Número do processo": "Número do processo ou registro (ex: REsp 1234567)",
+    "Classe processual": "Classe do processo (ex: Recurso Especial, Agravo)",
+    "Unidade Federativa": "Sigla do estado (ex: SP, RJ, MG)",
+    "Data de publicação (início)": "Formato: DD/MM/AAAA",
+    "Data de publicação (fim)": "Formato: DD/MM/AAAA",
+    "Data de decisão (início)": "Formato: DD/MM/AAAA",
+    "Data de decisão (fim)": "Formato: DD/MM/AAAA",
+    "Ementa": "Busca na ementa/indexação",
+    "Nota": "Nota do documento (campo select)",
+    "Número da Súmula": "Número da súmula (ex: 123)",
+    "Pagina": "Formato: '1' (única página), '1-3' (intervalo), '1,3,5' (páginas específicas), 'TODAS' ou 'ALL' ou 'TODOS' (todas as páginas)"
+  }
+}
+

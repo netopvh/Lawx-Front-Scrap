@@ -2,6 +2,86 @@
   "_comentario": "Mapeamento entre campos amigáveis (busca.json) e seletores DOM (Puppeteer)",
   "_instrucoes": "Este arquivo mapeia os nomes amigáveis para os seletores reais do DOM e valores técnicos",
 
+  "extraction": {
+    "_comment": "Seletores para extração de dados dos resultados da pesquisa",
+
+    "resultados": {
+      "selector": "tr.fundocinza1",
+      "_description": "Container de cada resultado (cada acórdão)"
+    },
+
+    "paginacao": {
+      "selector": "#paginacaoSuperior-A",
+      "_description": "Div de paginação superior",
+      "regex_resultados": "Resultados\\s+(\\d+)\\s+a\\s+(\\d+)\\s+de\\s+(\\d+)",
+      "selector_pagina_atual": "span.paginacaoResultados"
+    },
+
+    "numero_processo": {
+      "selector": "a.esajLinkLogin.downloadEmenta[cdacordao]",
+      "_description": "Número do processo/acórdão",
+      "extraction": "text"
+    },
+
+    "pdf_url": {
+      "selector": "a.downloadEmenta[cdacordao]",
+      "attribute": "cdacordao",
+      "_description": "Código do acórdão para gerar URL do PDF",
+      "url_template": "https://esaj.tjsp.jus.br/cjsg/getArquivo.do?cdAcordao={cdacordao}&conversao=pdf"
+    },
+
+    "classe_assunto": {
+      "selector": "tr.ementaClass2 td strong",
+      "label": "Classe/Assunto:",
+      "_description": "Classe processual e assunto",
+      "extraction": "text_after_label"
+    },
+
+    "relator": {
+      "selector": "tr.ementaClass2",
+      "label": "Relator(a):",
+      "_description": "Nome do relator",
+      "extraction": "text_after_label_in_rows"
+    },
+
+    "comarca": {
+      "selector": "tr.ementaClass2",
+      "label": "Comarca:",
+      "_description": "Comarca de origem",
+      "extraction": "text_after_label_in_rows"
+    },
+
+    "orgao_julgador": {
+      "selector": "tr.ementaClass2",
+      "label": "Órgão julgador:",
+      "_description": "Órgão julgador (Câmara, Turma, etc.)",
+      "extraction": "text_after_label_in_rows"
+    },
+
+    "data_julgamento": {
+      "selector": "tr.ementaClass2",
+      "label": "Data do julgamento:",
+      "_description": "Data de julgamento",
+      "extraction": "text_after_label_in_rows",
+      "format": "DD/MM/YYYY"
+    },
+
+    "data_publicacao": {
+      "selector": "tr.ementaClass2",
+      "label": "Data de publicação:",
+      "_description": "Data de publicação",
+      "extraction": "text_after_label_in_rows",
+      "format": "DD/MM/YYYY"
+    },
+
+    "ementa": {
+      "selector": "tr.ementaClass2 td[colspan=\"2\"] div[align=\"justify\"]",
+      "_description": "Ementa completa do acórdão",
+      "extraction": "text_with_hidden_sibling",
+      "label": "Ementa:"
+    }
+  },
+
   "fields": {
     "Pesquisa livre": {
       "technicalName": "buscaInteiroTeor",

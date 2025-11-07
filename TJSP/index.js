@@ -136,10 +136,17 @@ async function onCaptchaFinished(page, timeout = 45_000) {
       resolve({ method: "CDP", msg });
     };
 
-    // Cleanup de listeners
+    // Variável para armazenar o intervalo de verificação
+    let checkInterval = null;
+
+    // Cleanup de listeners e intervalos
     const cleanup = () => {
       emitter.removeListener("Captcha.detected", onDetected);
       emitter.removeListener("Captcha.solveFinished", onSolved);
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+      }
     };
 
     // Registrar listeners
@@ -154,7 +161,7 @@ async function onCaptchaFinished(page, timeout = 45_000) {
     }, timeout);
 
     // Verificação visual periódica (apenas se CAPTCHA NÃO foi detectado pelo CDP)
-    const checkInterval = setInterval(async () => {
+    checkInterval = setInterval(async () => {
       try {
         // Se CAPTCHA foi detectado pelo CDP, aguardar apenas o evento de resolução
         if (captchaDetected && !captchaSolved) {
@@ -164,7 +171,8 @@ async function onCaptchaFinished(page, timeout = 45_000) {
 
         // Se CAPTCHA já foi resolvido, parar verificação
         if (captchaSolved) {
-          clearInterval(checkInterval);
+          cleanup();
+          clearTimeout(timeoutId);
           return;
         }
 
@@ -176,7 +184,6 @@ async function onCaptchaFinished(page, timeout = 45_000) {
           if (!captchaDetected) {
             log("✅ Nenhum CAPTCHA detectado - página já está liberada!", "SUCCESS");
             cleanup();
-            clearInterval(checkInterval);
             clearTimeout(timeoutId);
 
             const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -186,6 +193,13 @@ async function onCaptchaFinished(page, timeout = 45_000) {
           }
         }
       } catch (error) {
+        // Se houver erro crítico (ex: página fechada), parar verificação
+        if (error.message.includes('detached') || error.message.includes('closed') || error.message.includes('Target closed')) {
+          log(`⚠️ Página foi fechada - parando verificação de CAPTCHA`, "WARNING");
+          cleanup();
+          clearTimeout(timeoutId);
+          return;
+        }
         log(`⚠️ Erro na verificação visual: ${error.message}`, "WARNING");
       }
     }, 2000); // Verificar a cada 2 segundos
@@ -194,9 +208,24 @@ async function onCaptchaFinished(page, timeout = 45_000) {
 
 /**
  * Aplica técnicas anti-detecção para evitar que o site identifique automação
+ * NOTA: Técnicas experimentais podem INTERFERIR com o solver do Scrapeless
+ * Use ANTI_DETECTION_EXPERIMENTAL=TRUE apenas se necessário
  */
 async function applyAntiDetection(page) {
   try {
+    // Verificar se deve usar técnicas experimentais (padrão: FALSE)
+    const useExperimental = process.env.ANTI_DETECTION_EXPERIMENTAL === "TRUE";
+
+    if (!useExperimental) {
+      log("⚠️ Técnicas anti-detecção experimentais DESATIVADAS (recomendado)", "INFO");
+      log("   Scrapeless já possui anti-detecção embutida", "INFO");
+      log("   Para ativar: ANTI_DETECTION_EXPERIMENTAL=TRUE", "INFO");
+      return;
+    }
+
+    log("🛡️ Aplicando técnicas anti-detecção EXPERIMENTAIS...", "WARNING");
+    log("   ATENÇÃO: Pode interferir com solver do Scrapeless!", "WARNING");
+
     // Remover propriedades que indicam automação
     await page.evaluateOnNewDocument(() => {
       // Sobrescrever navigator.webdriver
@@ -226,11 +255,59 @@ async function applyAntiDetection(page) {
       Object.defineProperty(navigator, 'languages', {
         get: () => ['pt-BR', 'pt', 'en-US', 'en'],
       });
+
+      // Sobrescrever automation flags
+      delete navigator.__proto__.webdriver;
+
+      // Sobrescrever toString para esconder modificações
+      const originalToString = Function.prototype.toString;
+      Function.prototype.toString = function() {
+        if (this === navigator.permissions.query) {
+          return 'function query() { [native code] }';
+        }
+        return originalToString.call(this);
+      };
     });
 
-    console.log(" Técnicas anti-detecção aplicadas.");
+    log("✅ Técnicas anti-detecção experimentais aplicadas", "SUCCESS");
   } catch (error) {
-    console.error(" Erro ao aplicar anti-detecção:", error);
+    log(`❌ Erro ao aplicar anti-detecção: ${error.message}`, "ERROR");
+  }
+}
+
+/**
+ * Gera delay aleatório entre min e max (em ms)
+ * Aplica multiplicador para delays mais humanos se configurado
+ */
+function randomDelay(min, max) {
+  // Multiplicador de delay para comportamento mais humano (padrão: 2x)
+  const delayMultiplier = parseFloat(process.env.HUMAN_DELAY_MULTIPLIER || "2.0");
+
+  const baseDelay = Math.floor(Math.random() * (max - min + 1)) + min;
+  const humanDelay = Math.floor(baseDelay * delayMultiplier);
+
+  return humanDelay;
+}
+
+/**
+ * Simula movimento de mouse humano
+ */
+async function humanMouseMove(page, selector) {
+  try {
+    const element = await page.$(selector);
+    if (!element) return;
+
+    const box = await element.boundingBox();
+    if (!box) return;
+
+    // Mover mouse para posição aleatória dentro do elemento
+    const x = box.x + box.width * (0.3 + Math.random() * 0.4);
+    const y = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+    await page.mouse.move(x, y, { steps: randomDelay(5, 15) });
+    await new Promise(resolve => setTimeout(resolve, randomDelay(50, 150)));
+  } catch (error) {
+    // Ignorar erros de movimento de mouse
   }
 }
 
@@ -297,10 +374,136 @@ function closeLog() {
 }
 
 /**
+ * Limpa todos os cookies, cache e storage do browser de forma agressiva
+ */
+async function clearAllCookies(page) {
+  try {
+    const client = await page.target().createCDPSession();
+
+    // Limpar cookies
+    await client.send('Network.clearBrowserCookies');
+
+    // Limpar cache
+    await client.send('Network.clearBrowserCache');
+
+    // Limpar todos os storages (localStorage, sessionStorage, indexedDB, etc)
+    await client.send('Storage.clearDataForOrigin', {
+      origin: '*',
+      storageTypes: 'all'
+    });
+
+    // Limpar via JavaScript também (redundância para garantir)
+    await page.evaluate(() => {
+      // Limpar localStorage
+      try { localStorage.clear(); } catch (e) {}
+
+      // Limpar sessionStorage
+      try { sessionStorage.clear(); } catch (e) {}
+
+      // Limpar cookies via document.cookie
+      try {
+        document.cookie.split(";").forEach(function(c) {
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      } catch (e) {}
+    });
+
+    log("🧹 Cookies, cache e storage limpos com sucesso (modo agressivo)", "SUCCESS");
+    return true;
+  } catch (error) {
+    log(`⚠️ Erro ao limpar cookies: ${error.message}`, "WARNING");
+    return false;
+  }
+}
+
+/**
+ * Conecta ao Scrapeless Cloud Browser com configurações
+ */
+async function connectBrowser(attemptNumber = 1) {
+  // Configuração de fingerprint customizado para evitar detecção
+  const fingerprint = {
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    platform: 'Windows',
+    screen: {
+      width: 1920,
+      height: 1080
+    },
+    localization: {
+      languages: ['pt-BR', 'pt', 'en-US', 'en'],
+      timezone: 'America/Sao_Paulo',
+      geolocation: {
+        latitude: -23.5505, // São Paulo, Brasil
+        longitude: -46.6333,
+        accuracy: 100
+      }
+    },
+    args: {
+      '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
+    }
+  };
+
+  // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
+  const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
+  const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+
+  // Verificar se deve usar modo anônimo (padrão: FALSE)
+  const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
+
+  // Configuração do Browser Scrapeless
+  const queryParams = {
+    token: process.env.SCRAPELESS_TOKEN,
+    sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
+    sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
+    sessionName: `${process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper"} - Tentativa ${attemptNumber}`,
+    fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
+    incognito: useIncognito,
+  };
+
+  // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
+  if (useProxy) {
+    queryParams.proxyCountry = proxyCountry;
+  }
+
+  const query = new URLSearchParams(queryParams);
+  const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
+
+  log(`🔗 Conectando ao browser Scrapeless (Tentativa ${attemptNumber})...`, "INFO");
+  log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
+  log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
+
+  // Log de configurações de comportamento
+  const antiDetection = process.env.ANTI_DETECTION_EXPERIMENTAL === "TRUE";
+  const delayMultiplier = parseFloat(process.env.HUMAN_DELAY_MULTIPLIER || "2.0");
+  log(`   Anti-Detecção Experimental: ${antiDetection ? '⚠️ ATIVADO' : '✅ Desativado (recomendado)'}`, "INFO");
+  log(`   Multiplicador de Delay Humano: ${delayMultiplier}x`, "INFO");
+
+  // Log da URL de conexão (sem token por segurança)
+  const debugURL = connectionURL.replace(/token=[^&]+/, 'token=***');
+  log(`   🔗 URL: ${debugURL}`, "INFO");
+  log("🖐️ Usando fingerprint customizado:", "INFO");
+  log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
+  log(`   Platform: ${fingerprint.platform}`, "INFO");
+  log(`   Screen: ${fingerprint.screen.width}x${fingerprint.screen.height}`, "INFO");
+  log(`   Timezone: ${fingerprint.localization.timezone}`, "INFO");
+  log(`   Languages: ${fingerprint.localization.languages.join(', ')}`, "INFO");
+
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: connectionURL,
+    defaultViewport: null,
+  });
+
+  log(`✅ Conectado ao browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
+  return browser;
+}
+
+/**
  * Função principal para execução local
  */
 async function main() {
   let browser = null;
+  const maxRetries = 3; // Máximo de tentativas
+  let currentAttempt = 0;
+  let success = false;
 
   try {
     // Garantir que os diretórios necessários existem
@@ -310,60 +513,72 @@ async function main() {
     initializeLog();
     log("=== INICIANDO SCRAPER TJSP ===", "INFO");
 
-    // Configuração de fingerprint customizado para evitar detecção
-    const fingerprint = {
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      platform: 'Windows',
-      screen: {
-        width: 1920,
-        height: 1080
-      },
-      localization: {
-        languages: ['pt-BR', 'pt', 'en-US', 'en'],
-        timezone: 'America/Sao_Paulo',
-      },
-      args: {
-        '--window-size': '1920,1080', // Mesmo tamanho do screen fingerprint
-      }
-    };
-
-    // Configuração do Browser Scrapeless
-    const query = new URLSearchParams({
-      token: process.env.SCRAPELESS_TOKEN,
-      proxyCountry: process.env.SCRAPELESS_PROXY_COUNTRY || "BR",
-      sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
-      sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
-      sessionName: process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper",
-      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)), // Adicionar fingerprint customizado
-    });
-
-    const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
-
-    log("🔗 Conectando ao browser Scrapeless...", "INFO");
-    log("🖐️ Usando fingerprint customizado:", "INFO");
-    log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
-    log(`   Platform: ${fingerprint.platform}`, "INFO");
-    log(`   Screen: ${fingerprint.screen.width}x${fingerprint.screen.height}`, "INFO");
-    log(`   Timezone: ${fingerprint.localization.timezone}`, "INFO");
-    log(`   Languages: ${fingerprint.localization.languages.join(', ')}`, "INFO");
-
-    browser = await puppeteer.connect({
-      browserWSEndpoint: connectionURL,
-      defaultViewport: null,
-    });
-    log("✅ Conectado ao browser!", "SUCCESS");
-
-    // Executar o scraper
     const url = process.env.TJSP_URL || "https://esaj.tjsp.jus.br/cjsg/resultadoCompleta.do";
-    await runScraper(browser, url);
+
+    // Loop de tentativas
+    while (currentAttempt < maxRetries && !success) {
+      currentAttempt++;
+
+      log("", "INFO");
+      log("═══════════════════════════════════════════════════════", "INFO");
+      log(`🔄 TENTATIVA ${currentAttempt} DE ${maxRetries}`, "INFO");
+      log("═══════════════════════════════════════════════════════", "INFO");
+
+      try {
+        // Conectar ao browser (nova sessão a cada tentativa)
+        browser = await connectBrowser(currentAttempt);
+
+        // Executar o scraper
+        await runScraper(browser, url);
+
+        // Se chegou aqui, foi sucesso
+        success = true;
+        log("", "SUCCESS");
+        log("═══════════════════════════════════════════════════════", "SUCCESS");
+        log("✅ SCRAPING CONCLUÍDO COM SUCESSO!", "SUCCESS");
+        log("═══════════════════════════════════════════════════════", "SUCCESS");
+
+      } catch (error) {
+        log(`❌ Erro na tentativa ${currentAttempt}: ${error.message}`, "ERROR");
+
+        // Fechar browser atual antes de tentar novamente
+        if (browser) {
+          try {
+            await browser.close();
+            log("🔒 Browser fechado", "INFO");
+          } catch (closeError) {
+            log(`⚠️ Erro ao fechar browser: ${closeError.message}`, "WARNING");
+          }
+          browser = null;
+        }
+
+        // Se foi erro de bypass do CAPTCHA e ainda há tentativas, tentar novamente
+        if (error.message.includes("Bypass do reCAPTCHA falhou") && currentAttempt < maxRetries) {
+          log("", "INFO");
+          log("🔄 Detectado falha no bypass do CAPTCHA", "WARNING");
+          log(`🔄 Aguardando 5 segundos antes de tentar novamente com NOVA SESSÃO...`, "INFO");
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (currentAttempt >= maxRetries) {
+          // Esgotou tentativas
+          throw new Error(`Falha após ${maxRetries} tentativas: ${error.message}`);
+        } else {
+          // Outro tipo de erro, não tentar novamente
+          throw error;
+        }
+      }
+    }
 
   } catch (error) {
     log(`❌ Erro fatal no main(): ${error.message}`, "ERROR");
     if (error.stack) log(error.stack, "ERROR");
   } finally {
     if (browser) {
-      await browser.close();
-      log("🔒 Browser fechado", "INFO");
+      try {
+        await browser.close();
+        log("🔒 Browser fechado", "INFO");
+      } catch (closeError) {
+        log(`⚠️ Erro ao fechar browser: ${closeError.message}`, "WARNING");
+      }
     }
 
     // Fechar log
@@ -805,10 +1020,14 @@ function parsePagination(paginaValue, totalPages = null) {
 }
 
 /**
- * Extrai dados estruturados de uma página de resultados
+ * Extrai dados estruturados de uma página de resultados usando fields.json
  */
 async function extractPageData(page) {
-  return await page.evaluate(() => {
+  // Carregar configuração de campos
+  const fieldsConfig = JSON.parse(fs.readFileSync(path.join("config", "fields.json"), "utf-8"));
+  const extractionConfig = fieldsConfig.extraction;
+
+  return await page.evaluate((config) => {
     const tabsDiv = document.querySelector('div#tabs');
     if (!tabsDiv) return null;
 
@@ -818,8 +1037,8 @@ async function extractPageData(page) {
       return (element.innerText || element.textContent || "").trim();
     }
 
-    // Extrair informações de paginação
-    const paginacaoDiv = tabsDiv.querySelector('#paginacaoSuperior-A');
+    // Extrair informações de paginação usando config
+    const paginacaoDiv = tabsDiv.querySelector(config.paginacao.selector);
     let totalResultados = 0;
     let resultadosInicio = 0;
     let resultadosFim = 0;
@@ -827,7 +1046,8 @@ async function extractPageData(page) {
 
     if (paginacaoDiv) {
       const paginacaoText = getCleanText(paginacaoDiv);
-      const match = paginacaoText.match(/Resultados\s+(\d+)\s+a\s+(\d+)\s+de\s+(\d+)/);
+      const regex = new RegExp(config.paginacao.regex_resultados);
+      const match = paginacaoText.match(regex);
       if (match) {
         resultadosInicio = parseInt(match[1]);
         resultadosFim = parseInt(match[2]);
@@ -835,7 +1055,7 @@ async function extractPageData(page) {
       }
 
       // Detectar página atual
-      const paginaAtualSpan = paginacaoDiv.querySelector('span.paginacaoResultados');
+      const paginaAtualSpan = paginacaoDiv.querySelector(config.paginacao.selector_pagina_atual);
       if (paginaAtualSpan) {
         const paginaMatch = getCleanText(paginaAtualSpan).match(/(\d+)/);
         if (paginaMatch) {
@@ -853,8 +1073,8 @@ async function extractPageData(page) {
       items: []
     };
 
-    // Extrair itens de resultado (cada <tr> com classe fundocinza1)
-    const resultItems = tabsDiv.querySelectorAll('tr.fundocinza1');
+    // Extrair itens de resultado usando config
+    const resultItems = tabsDiv.querySelectorAll(config.resultados.selector);
 
     resultItems.forEach((tr) => {
       const item = {
@@ -862,92 +1082,93 @@ async function extractPageData(page) {
       };
 
       // Extrair número do processo
-      const processoLink = tr.querySelector('a.esajLinkLogin.downloadEmenta[cdacordao]');
-      if (processoLink) {
-        item.numero_processo = getCleanText(processoLink);
-      } else {
-        item.numero_processo = "";
-      }
+      const processoEl = tr.querySelector(config.numero_processo.selector);
+      item.numero_processo = processoEl ? getCleanText(processoEl) : "";
 
       // Extrair URL do PDF
-      item.pdf_url = "";
-      const pdfLink = tr.querySelector('a.downloadEmenta[cdacordao]');
-      if (pdfLink) {
-        const cdAcordao = pdfLink.getAttribute('cdacordao');
+      const pdfEl = tr.querySelector(config.pdf_url.selector);
+      if (pdfEl) {
+        const cdAcordao = pdfEl.getAttribute(config.pdf_url.attribute);
         if (cdAcordao) {
-          item.pdf_url = `https://esaj.tjsp.jus.br/cjsg/getArquivo.do?cdAcordao=${cdAcordao}&conversao=pdf`;
+          item.pdf_url = config.pdf_url.url_template.replace('{cdacordao}', cdAcordao);
+        } else {
+          item.pdf_url = "";
         }
+      } else {
+        item.pdf_url = "";
       }
 
       // Extrair Classe/Assunto
-      const classeAssuntoRow = tr.querySelector('tr.ementaClass2 td strong');
-      if (classeAssuntoRow && getCleanText(classeAssuntoRow) === "Classe/Assunto:") {
-        const classeAssuntoText = getCleanText(classeAssuntoRow.parentElement);
-        item.classe_assunto = classeAssuntoText.replace("Classe/Assunto:", "").trim();
+      const classeAssuntoEl = tr.querySelector(config.classe_assunto.selector);
+      if (classeAssuntoEl && getCleanText(classeAssuntoEl) === config.classe_assunto.label) {
+        const classeAssuntoText = getCleanText(classeAssuntoEl.parentElement);
+        item.classe_assunto = classeAssuntoText.replace(config.classe_assunto.label, "").trim();
       } else {
         item.classe_assunto = "";
       }
 
-      // Extrair Relator
-      const relatorRows = tr.querySelectorAll('tr.ementaClass2');
-      for (const row of relatorRows) {
-        const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Relator(a):") {
-          item.relator = getCleanText(row.querySelector('td')).replace("Relator(a):", "").trim();
-          break;
-        }
-      }
-      if (!item.relator) item.relator = "";
+      // Extrair campos que usam "text_after_label_in_rows" (relator, comarca, etc.)
+      const rows = tr.querySelectorAll(config.relator.selector);
 
-      // Extrair Comarca
-      for (const row of relatorRows) {
+      // Relator
+      item.relator = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Comarca:") {
-          item.comarca = getCleanText(row.querySelector('td')).replace("Comarca:", "").trim();
+        if (strong && getCleanText(strong) === config.relator.label) {
+          item.relator = getCleanText(row.querySelector('td')).replace(config.relator.label, "").trim();
           break;
         }
       }
-      if (!item.comarca) item.comarca = "";
 
-      // Extrair Órgão julgador
-      for (const row of relatorRows) {
+      // Comarca
+      item.comarca = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Órgão julgador:") {
-          item.orgao_julgador = getCleanText(row.querySelector('td')).replace("Órgão julgador:", "").trim();
+        if (strong && getCleanText(strong) === config.comarca.label) {
+          item.comarca = getCleanText(row.querySelector('td')).replace(config.comarca.label, "").trim();
           break;
         }
       }
-      if (!item.orgao_julgador) item.orgao_julgador = "";
 
-      // Extrair Data do julgamento
-      for (const row of relatorRows) {
+      // Órgão julgador
+      item.orgao_julgador = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Data do julgamento:") {
-          item.data_julgamento = getCleanText(row.querySelector('td')).replace("Data do julgamento:", "").trim();
+        if (strong && getCleanText(strong) === config.orgao_julgador.label) {
+          item.orgao_julgador = getCleanText(row.querySelector('td')).replace(config.orgao_julgador.label, "").trim();
           break;
         }
       }
-      if (!item.data_julgamento) item.data_julgamento = "";
 
-      // Extrair Data de publicação
-      for (const row of relatorRows) {
+      // Data do julgamento
+      item.data_julgamento = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Data de publicação:") {
-          item.data_publicacao = getCleanText(row.querySelector('td')).replace("Data de publicação:", "").trim();
+        if (strong && getCleanText(strong) === config.data_julgamento.label) {
+          item.data_julgamento = getCleanText(row.querySelector('td')).replace(config.data_julgamento.label, "").trim();
           break;
         }
       }
-      if (!item.data_publicacao) item.data_publicacao = "";
+
+      // Data de publicação
+      item.data_publicacao = "";
+      for (const row of rows) {
+        const strong = row.querySelector('strong');
+        if (strong && getCleanText(strong) === config.data_publicacao.label) {
+          item.data_publicacao = getCleanText(row.querySelector('td')).replace(config.data_publicacao.label, "").trim();
+          break;
+        }
+      }
 
       // Extrair Ementa (texto completo, não truncado)
-      const ementaRow = tr.querySelector('tr.ementaClass2 td[colspan="2"] div[align="justify"]');
+      const ementaRow = tr.querySelector(config.ementa.selector);
       if (ementaRow) {
         // Buscar a div oculta que contém a ementa completa
         const ementaCompleta = ementaRow.nextElementSibling;
         if (ementaCompleta && ementaCompleta.style.display === 'none') {
-          item.ementa = getCleanText(ementaCompleta).replace("Ementa:", "").trim();
+          item.ementa = getCleanText(ementaCompleta).replace(config.ementa.label, "").trim();
         } else {
-          item.ementa = getCleanText(ementaRow).replace("Ementa:", "").trim();
+          item.ementa = getCleanText(ementaRow).replace(config.ementa.label, "").trim();
         }
       } else {
         item.ementa = "";
@@ -960,7 +1181,7 @@ async function extractPageData(page) {
     });
 
     return data;
-  });
+  }, extractionConfig);
 }
 
 /**
@@ -1036,7 +1257,22 @@ async function navigateToPage(page, pageNumber) {
  */
 async function fillTextField(page, friendlyName, fieldMapping, value) {
   log(`✍️ Preenchendo '${fieldMapping.label}': "${value}"`, "INFO");
-  await page.type(fieldMapping.selector, String(value), { delay: 50 });
+
+  // Mover mouse para o campo antes de digitar
+  await humanMouseMove(page, fieldMapping.selector);
+  await new Promise(resolve => setTimeout(resolve, randomDelay(100, 300)));
+
+  // Clicar no campo para focar
+  await page.click(fieldMapping.selector);
+  await new Promise(resolve => setTimeout(resolve, randomDelay(100, 200)));
+
+  // Digitar com delay aleatório entre 100-200ms (mais humano)
+  await page.type(fieldMapping.selector, String(value), {
+    delay: randomDelay(100, 200)
+  });
+
+  // Pequeno delay após digitar
+  await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
 }
 
 /**
@@ -1045,10 +1281,18 @@ async function fillTextField(page, friendlyName, fieldMapping, value) {
 async function fillCheckbox(page, friendlyName, fieldMapping, value) {
   if (value) {
     log(`☑️ Marcando '${fieldMapping.label}'`, "INFO");
+
+    // Mover mouse para o checkbox
+    await humanMouseMove(page, fieldMapping.selector);
+    await new Promise(resolve => setTimeout(resolve, randomDelay(100, 300)));
+
     await page.evaluate((selector) => {
       const checkbox = document.querySelector(selector);
       if (checkbox && !checkbox.checked) checkbox.click();
     }, fieldMapping.selector);
+
+    // Delay após marcar
+    await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
   }
 }
 
@@ -1072,12 +1316,21 @@ async function fillCheckboxGroup(page, friendlyName, fieldMapping, values) {
     });
   }, fieldMapping.selector);
 
+  await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
+
   // Marcar os selecionados
   for (const techValue of technicalValues) {
+    // Mover mouse para cada checkbox
+    const checkboxSelector = `${fieldMapping.selector}[value="${techValue}"]`;
+    await humanMouseMove(page, checkboxSelector);
+    await new Promise(resolve => setTimeout(resolve, randomDelay(100, 200)));
+
     await page.evaluate((selector, value) => {
       const checkbox = document.querySelector(`${selector}[value="${value}"]`);
       if (checkbox && !checkbox.checked) checkbox.click();
     }, fieldMapping.selector, techValue);
+
+    await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
   }
 }
 
@@ -1089,10 +1342,19 @@ async function fillRadio(page, friendlyName, fieldMapping, value) {
   const technicalValue = convertValue(friendlyName, value);
 
   log(`📊 Selecionando '${fieldMapping.label}': ${value}`, "INFO");
+
+  // Mover mouse para o radio button
+  const radioSelector = `${fieldMapping.selector}[value="${technicalValue}"]`;
+  await humanMouseMove(page, radioSelector);
+  await new Promise(resolve => setTimeout(resolve, randomDelay(100, 300)));
+
   await page.evaluate((selector, val) => {
     const radio = document.querySelector(`${selector}[value="${val}"]`);
     if (radio && !radio.checked) radio.click();
   }, fieldMapping.selector, technicalValue);
+
+  // Delay após selecionar
+  await new Promise(resolve => setTimeout(resolve, randomDelay(200, 400)));
 }
 
 /**
@@ -1139,6 +1401,10 @@ async function runScraper(browser, url) {
     log("📄 Criando nova página...", "INFO");
     page = await browser.newPage();
 
+    // Limpar cookies e cache ANTES de qualquer navegação
+    log("🧹 Limpando cookies e cache...", "INFO");
+    await clearAllCookies(page);
+
     // Aplicar técnicas anti-detecção
     log("🛡️ Aplicando técnicas anti-detecção...", "INFO");
     await applyAntiDetection(page);
@@ -1177,6 +1443,11 @@ async function runScraper(browser, url) {
       log("   3. Problemas de conexão de rede", "ERROR");
       log("   4. CAPTCHA não foi apresentado (página já estava liberada)", "ERROR");
       log("   5. Tipo de CAPTCHA não suportado pelo Scrapeless", "ERROR");
+      log("   6. Cookies antigos impedindo resolução", "ERROR");
+
+      // Limpar cookies em caso de falha
+      log("🧹 Limpando cookies após falha no CAPTCHA...", "INFO");
+      await clearAllCookies(page);
 
       // Capturar screenshot do timeout
       const timeoutFilename = getTimestampedFilename("captcha-timeout", "png");
@@ -1188,9 +1459,9 @@ async function runScraper(browser, url) {
       throw new Error("Timeout aguardando resolução do CAPTCHA. Verifique conexão com Scrapeless.");
     }
 
-    // Aguardar um pouco após resolver o CAPTCHA
-    log("⏱️ Aguardando 3 segundos após resolução do CAPTCHA...", "INFO");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Aguardar um pouco após resolver o CAPTCHA (aumentado para 10s para garantir validação)
+    log("⏱️ Aguardando 10 segundos após resolução do CAPTCHA...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 10000));
 
     // Verificar se a página está realmente pronta (sem overlay de CAPTCHA)
     log("🔍 Verificando se página está completamente carregada...", "INFO");
@@ -1360,8 +1631,16 @@ async function runScraper(browser, url) {
     log("🔍 CLICANDO NO BOTÃO PESQUISAR", "INFO");
     log("═══════════════════════════════════════════════════════", "INFO");
 
+    // Delay antes de clicar (comportamento humano)
+    await new Promise(resolve => setTimeout(resolve, randomDelay(500, 1000)));
+
+    // Mover mouse para o botão antes de clicar
+    const submitSelector = 'input[type="submit"][value="Pesquisar"]';
+    await humanMouseMove(page, submitSelector);
+    await new Promise(resolve => setTimeout(resolve, randomDelay(300, 600)));
+
     // Clicar no botão sem aguardar navegação (pode ter CAPTCHA)
-    await page.click('input[type="submit"][value="Pesquisar"]');
+    await page.click(submitSelector);
     log("✅ Botão clicado!", "SUCCESS");
 
     // Aguardar um pouco para ver se CAPTCHA aparece
@@ -1390,10 +1669,20 @@ async function runScraper(browser, url) {
       log("ℹ️ Nenhum CAPTCHA detectado após submissão (ou já resolvido)", "INFO");
     }
 
+    // Aguardar navegação/carregamento da página de resultados
+    log("⏳ Aguardando carregamento completo da página de resultados...", "INFO");
+    try {
+      // Aguardar até que a página tenha conteúdo (networkidle2 = sem requisições por 500ms)
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+      log("✅ Navegação concluída!", "SUCCESS");
+    } catch (navError) {
+      log("⚠️ Timeout aguardando navegação, continuando...", "WARNING");
+    }
+
     log("📄 Página de resultados carregada!", "SUCCESS");
 
     // Aguardar um pouco para a página carregar completamente
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Verificar novamente se houve falha no bypass APÓS submeter o formulário
     log("🔍 Verificando se há mensagem de erro após submissão...", "INFO");
@@ -1416,6 +1705,10 @@ async function runScraper(browser, url) {
     if (postSubmitCheck.failed) {
       log("❌ FALHA NO BYPASS DO RECAPTCHA DETECTADA APÓS SUBMISSÃO!", "ERROR");
 
+      // Limpar cookies imediatamente após detectar falha
+      log("🧹 Limpando cookies após falha no bypass do reCAPTCHA...", "INFO");
+      await clearAllCookies(page);
+
       // Capturar screenshot do erro com nome correto
       const errorFilename = getTimestampedFilename("captcha-bypass-fail", "png");
       const errorScreenshot = path.join("screenshots", errorFilename);
@@ -1430,14 +1723,52 @@ async function runScraper(browser, url) {
 
     // Validar se a div#tabs existe
     log("🔍 Validando presença da div#tabs...", "INFO");
-    const tabsExists = await page.evaluate(() => {
-      return document.querySelector('div#tabs') !== null;
+    const pageCheck = await page.evaluate(() => {
+      const tabs = document.querySelector('div#tabs');
+      const noResults = document.querySelector('div.mensagemAlerta, div.mensagemAviso');
+      const noResultsText = noResults ? (noResults.innerText || noResults.textContent || '').trim() : '';
+
+      // Capturar informações adicionais para diagnóstico
+      const bodyText = document.body ? (document.body.innerText || '').substring(0, 500) : '';
+      const title = document.title || '';
+      const url = window.location.href || '';
+
+      return {
+        tabsExists: tabs !== null,
+        noResults: noResults !== null,
+        noResultsText: noResultsText,
+        bodyText: bodyText,
+        title: title,
+        url: url
+      };
     });
 
-    if (!tabsExists) {
+    if (!pageCheck.tabsExists) {
       log("⚠️ Div#tabs não encontrada na página!", "WARNING");
 
-      // Screenshot de erro (div#tabs não encontrada)
+      // Log de diagnóstico
+      log(`📄 Título da página: "${pageCheck.title}"`, "INFO");
+      log(`🔗 URL atual: ${pageCheck.url}`, "INFO");
+      log(`📝 Primeiros 500 caracteres do body:`, "INFO");
+      log(`   ${pageCheck.bodyText}`, "INFO");
+
+      // Verificar se é mensagem de "nenhum resultado"
+      if (pageCheck.noResults) {
+        log(`ℹ️ Mensagem encontrada: "${pageCheck.noResultsText}"`, "INFO");
+        log("✅ Pesquisa executada com sucesso, mas não retornou resultados", "SUCCESS");
+
+        // Screenshot de "sem resultados"
+        const noResultsFilename = getTimestampedFilename("no-results", "png");
+        const noResultsScreenshot = path.join("screenshots", noResultsFilename);
+        await page.screenshot({ path: noResultsScreenshot, fullPage: true });
+        log(`📸 Screenshot de "sem resultados" capturado: ${noResultsScreenshot}`, "INFO");
+
+        // Não é erro - apenas não há resultados
+        log("🏁 Scraping concluído (sem resultados para o período)", "SUCCESS");
+        return;
+      }
+
+      // Screenshot de erro (div#tabs não encontrada e sem mensagem de "sem resultados")
       const errorFilename = getTimestampedFilename("error", "png");
       const errorScreenshot = path.join("screenshots", errorFilename);
       await page.screenshot({ path: errorScreenshot, fullPage: true });

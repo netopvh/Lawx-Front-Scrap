@@ -123,25 +123,49 @@ function loadConfig(filename) {
 // FUNÇÕES DE URL
 // ═══════════════════════════════════════════════════════════════════════
 
-function buildSearchUrl(params) {
+/**
+ * Converte campos amigáveis para campos técnicos usando fields.json
+ */
+function convertFriendlyFieldsToTechnical(buscaConfig, urlParamsMapping) {
+  const technicalConfig = {};
+
+  // Converter campos amigáveis para técnicos
+  for (const [friendlyName, value] of Object.entries(buscaConfig)) {
+    // Ignorar campos que começam com _
+    if (friendlyName.startsWith("_")) {
+      continue;
+    }
+
+    // Se existe mapeamento no fields.json, usar o nome técnico
+    const technicalName = urlParamsMapping[friendlyName] || friendlyName;
+    technicalConfig[technicalName] = value;
+  }
+
+  return technicalConfig;
+}
+
+function buildSearchUrl(params, urlParamsMapping) {
+  // Converter campos amigáveis para técnicos usando mapeamento do fields.json
+  const technicalParams = convertFriendlyFieldsToTechnical(params, urlParamsMapping);
+
   const queryParams = new URLSearchParams();
 
   // Adicionar parâmetros obrigatórios
-  if (params.queryString) queryParams.set("queryString", params.queryString);
-  if (params.base) queryParams.set("base", params.base);
+  if (technicalParams.queryString) queryParams.set("queryString", technicalParams.queryString);
+  if (technicalParams.base) queryParams.set("base", technicalParams.base);
 
   // Adicionar parâmetros opcionais
-  if (params.pesquisa_inteiro_teor !== undefined) {
-    queryParams.set("pesquisa_inteiro_teor", params.pesquisa_inteiro_teor);
+  if (technicalParams.pesquisa_inteiro_teor !== undefined) {
+    queryParams.set("pesquisa_inteiro_teor", technicalParams.pesquisa_inteiro_teor);
   }
-  if (params.sinonimo !== undefined) queryParams.set("sinonimo", params.sinonimo);
-  if (params.plural !== undefined) queryParams.set("plural", params.plural);
-  if (params.radicais !== undefined) queryParams.set("radicais", params.radicais);
-  if (params.buscaExata !== undefined) queryParams.set("buscaExata", params.buscaExata);
-  if (params.page !== undefined) queryParams.set("page", params.page);
-  if (params.pageSize !== undefined) queryParams.set("pageSize", params.pageSize);
-  if (params.sort) queryParams.set("sort", params.sort);
-  if (params.sortBy) queryParams.set("sortBy", params.sortBy);
+  if (technicalParams.sinonimo !== undefined) queryParams.set("sinonimo", technicalParams.sinonimo);
+  if (technicalParams.plural !== undefined) queryParams.set("plural", technicalParams.plural);
+  if (technicalParams.radicais !== undefined) queryParams.set("radicais", technicalParams.radicais);
+  if (technicalParams.buscaExata !== undefined) queryParams.set("buscaExata", technicalParams.buscaExata);
+  if (technicalParams.page !== undefined) queryParams.set("page", technicalParams.page);
+  if (technicalParams.pageSize !== undefined) queryParams.set("pageSize", technicalParams.pageSize);
+  if (technicalParams.sort) queryParams.set("sort", technicalParams.sort);
+  if (technicalParams.sortBy) queryParams.set("sortBy", technicalParams.sortBy);
 
   return `${STF_BASE_URL}?${queryParams.toString()}`;
 }
@@ -661,28 +685,70 @@ async function main() {
     // Garantir que diretórios existem
     ensureDirectories();
 
+    /**
+     * Limpa todos os cookies do browser
+     */
+    async function clearAllCookies(page) {
+      try {
+        const client = await page.target().createCDPSession();
+        await client.send('Network.clearBrowserCookies');
+        await client.send('Network.clearBrowserCache');
+        log("🧹 Cookies e cache limpos com sucesso", "SUCCESS");
+        return true;
+      } catch (error) {
+        log(`⚠️ Erro ao limpar cookies: ${error.message}`, "WARNING");
+        return false;
+      }
+    }
+
     // Carregar configurações
     log("📂 Carregando configurações...", "INFO");
     const buscaConfig = loadConfig("busca.json");
     const fieldsConfig = loadConfig("fields.json");
+    const urlParamsMapping = fieldsConfig.url_params || {};
+    const extractionConfig = fieldsConfig.extraction || fieldsConfig; // Fallback para compatibilidade
     log("✅ Configurações carregadas", "SUCCESS");
+    log(`   📋 ${Object.keys(urlParamsMapping).length} mapeamentos de URL`, "INFO");
+    log(`   📋 ${Object.keys(extractionConfig).length} seletores de extração`, "INFO");
 
-    // Parsear paginação (será ajustado depois de detectar total de páginas)
-    let paginaConfig = buscaConfig.page;
-    let pages = parsePagination(paginaConfig);
+    // Parsear paginação (aceita tanto "Pagina" quanto "page")
+    const paginaValue = buscaConfig["Pagina"] || buscaConfig.page || "1";
+    let pages = parsePagination(paginaValue);
+    if (pages === null) {
+      log("⚠️ Modo 'TODAS AS PÁGINAS' não implementado ainda. Usando página 1.", "WARNING");
+      pages = [1];
+    }
+
+    log(`📚 Processando ${pages.length} página(s): ${pages.join(", ")}`, "INFO");
 
     // Conectar ao Scrapeless Cloud Browser
     log("🌐 Conectando ao Scrapeless Cloud Browser...", "INFO");
 
-    const query = new URLSearchParams({
+    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
+    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
+    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+
+    // Verificar se deve usar modo anônimo (padrão: FALSE)
+    const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
+
+    const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
-      proxyCountry: "BR", // Usar sempre proxy BR (funciona melhor com sites brasileiros)
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STF Scraper",
-    });
+      incognito: useIncognito,
+    };
 
+    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
+    if (useProxy) {
+      queryParams.proxyCountry = proxyCountry;
+    }
+
+    const query = new URLSearchParams(queryParams);
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
+
+    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
+    log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
 
     browser = await Promise.race([
       puppeteer.connect({
@@ -695,7 +761,7 @@ async function main() {
       )
     ]);
 
-    log("✅ Conectado ao Scrapeless Cloud Browser com Proxy Brasil!", "SUCCESS");
+    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
 
     // Aguardar antes de criar a página (Scrapeless precisa de tempo para estabilizar)
     const initialDelay = 3000;
@@ -705,8 +771,35 @@ async function main() {
     page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
+    // Limpar cookies e cache ANTES de qualquer navegação
+    log("🧹 Limpando cookies e cache...", "INFO");
+    await clearAllCookies(page);
+
     // Ignorar erros de certificado SSL
     await page.setBypassCSP(true);
+
+    // Adicionar listener para capturar requests e responses
+    page.on('request', request => {
+      const url = request.url();
+      if (url.includes('stf.jus.br')) {
+        log(`   🌐 REQUEST: ${request.method()} ${url}`, "INFO");
+      }
+    });
+
+    page.on('response', response => {
+      const url = response.url();
+      if (url.includes('stf.jus.br')) {
+        log(`   📥 RESPONSE: ${response.status()} ${url}`, "INFO");
+
+        // Verificar se há redirecionamento
+        if (response.status() >= 300 && response.status() < 400) {
+          const location = response.headers()['location'];
+          if (location) {
+            log(`   🔀 REDIRECT para: ${location}`, "WARNING");
+          }
+        }
+      }
+    });
 
     log("✅ Nova página criada", "SUCCESS");
 
@@ -722,8 +815,8 @@ async function main() {
       log("", "INFO");
       log(`📄 Processando página ${pageNum}...`, "INFO");
 
-      // Construir URL
-      const url = buildSearchUrl({ ...buscaConfig, page: pageNum });
+      // Construir URL usando mapeamento do fields.json
+      const url = buildSearchUrl({ ...buscaConfig, page: pageNum }, urlParamsMapping);
       log(`🔗 URL: ${url}`, "INFO");
 
       // Acessar página com retry
@@ -741,11 +834,33 @@ async function main() {
             log(`   🔄 Tentativa ${gotoAttempt}/${maxGotoAttempts}...`, "INFO");
           }
 
+          // Log da URL antes de navegar
+          log(`   📍 Navegando para: ${url}`, "INFO");
+
           await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+          // Log da URL após navegação (pode ter havido redirecionamento)
+          const currentUrl = page.url();
+          log(`   📍 URL atual após navegação: ${currentUrl}`, "INFO");
+
+          if (currentUrl !== url) {
+            log(`   ⚠️ REDIRECIONAMENTO DETECTADO!`, "WARNING");
+            log(`      De: ${url}`, "WARNING");
+            log(`      Para: ${currentUrl}`, "WARNING");
+          }
+
           pageLoaded = true;
           log("✅ Página carregada", "SUCCESS");
 
         } catch (gotoError) {
+          // Capturar URL atual mesmo em caso de erro
+          try {
+            const errorUrl = page.url();
+            log(`   📍 URL no momento do erro: ${errorUrl}`, "WARNING");
+          } catch (urlError) {
+            log(`   ⚠️ Não foi possível obter URL atual`, "WARNING");
+          }
+
           log(`⚠️ Erro ao carregar (tentativa ${gotoAttempt}): ${gotoError.message}`, "WARNING");
 
           // Se for erro de túnel e ainda temos tentativas, aguardar mais tempo
@@ -774,64 +889,8 @@ async function main() {
         continue;
       }
 
-      // Na primeira página, detectar total de páginas se necessário
-      if (pageNum === pages[0] && pages === parsePagination(paginaConfig)) {
-        const totalPages = await page.evaluate(() => {
-          // Tentar encontrar informação de paginação
-          // Exemplo: "Página 1 de 10" ou similar
-          const paginationText = document.body.innerText;
-
-          // Procurar por padrões comuns
-          const patterns = [
-            /página\s+\d+\s+de\s+(\d+)/i,
-            /page\s+\d+\s+of\s+(\d+)/i,
-            /\d+\s+de\s+(\d+)\s+página/i,
-            /total.*?(\d+)\s+página/i
-          ];
-
-          for (const pattern of patterns) {
-            const match = paginationText.match(pattern);
-            if (match && match[1]) {
-              return parseInt(match[1]);
-            }
-          }
-
-          // Tentar contar botões de paginação
-          const pageButtons = document.querySelectorAll('[class*="page"], [class*="pagination"] button, [class*="pagination"] a');
-          const pageNumbers = [];
-          pageButtons.forEach(btn => {
-            const text = btn.textContent?.trim();
-            const num = parseInt(text);
-            if (!isNaN(num)) {
-              pageNumbers.push(num);
-            }
-          });
-
-          if (pageNumbers.length > 0) {
-            return Math.max(...pageNumbers);
-          }
-
-          return null;
-        });
-
-        if (totalPages && totalPages > 1) {
-          log(`📄 Total de páginas detectado: ${totalPages}`, "INFO");
-
-          // Se configuração era "TODAS", ajustar array de páginas
-          if (pages === null || (paginaConfig && String(paginaConfig).trim().toUpperCase() === "TODAS" ||
-              String(paginaConfig).trim().toUpperCase() === "ALL" ||
-              String(paginaConfig).trim().toUpperCase() === "TODOS")) {
-            pages = [];
-            for (let i = 1; i <= totalPages; i++) {
-              pages.push(i);
-            }
-            log(`📚 Processando TODAS as ${totalPages} páginas`, "INFO");
-          }
-        }
-      }
-
-      // Extrair dados
-      const items = await extractData(page, fieldsConfig);
+      // Extrair dados usando seletores do fields.json
+      const items = await extractData(page, extractionConfig);
       allItems.push(...items);
 
       log(`✅ Página ${pageNum}: ${items.length} itens extraídos`, "SUCCESS");

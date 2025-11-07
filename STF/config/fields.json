@@ -1,66 +1,85 @@
 {
-  "_comment": "Seletores para extração de dados do STF - Baseados na estrutura HTML real",
+  "_comment": "Configuração de campos do STF - Mapeamento de campos amigáveis para parâmetros de URL e seletores de extração",
 
-  "resultados": {
-    "selector": ".result-container"
+  "url_params": {
+    "_comment": "Mapeamento de campos amigáveis (busca.json) para parâmetros técnicos da URL",
+    "Pesquisa livre": "queryString",
+    "Base de dados": "base",
+    "Pesquisar no inteiro teor": "pesquisa_inteiro_teor",
+    "Pesquisar com sinônimos": "sinonimo",
+    "Pesquisar no plural": "plural",
+    "Pesquisar radicais": "radicais",
+    "Busca exata": "buscaExata",
+    "Pagina": "page",
+    "Resultados por página": "pageSize",
+    "Ordenar por": "sort",
+    "Ordem": "sortBy"
   },
 
-  "numero_processo": {
-    "selector": "h4:nth-of-type(1)",
-    "_description": "Número do processo (ex: RE 1182189)"
-  },
+  "extraction": {
+    "_comment": "Seletores CSS para extração de dados dos resultados da pesquisa",
 
-  "orgao_julgador": {
-    "selector": "h4:nth-of-type(2) > span",
-    "_description": "Órgão julgador (ex: Tribunal Pleno, Primeira Turma)"
-  },
+    "resultados": {
+      "selector": ".result-container"
+    },
 
-  "relator": {
-    "selector": "h4:nth-of-type(3) > span",
-    "_description": "Ministro relator (ex: Min. MARCO AURÉLIO)"
-  },
+    "numero_processo": {
+      "selector": "h4:nth-of-type(1)",
+      "_description": "Número do processo (ex: RE 1182189)"
+    },
 
-  "redator_acordao": {
-    "selector": "h4:nth-of-type(4) > span",
-    "_description": "Ministro redator do acórdão (ex: Min. EDSON FACHIN)"
-  },
+    "orgao_julgador": {
+      "selector": "h4:nth-of-type(2) > span",
+      "_description": "Órgão julgador (ex: Tribunal Pleno, Primeira Turma)"
+    },
 
-  "data_julgamento": {
-    "selector": "h4:nth-of-type(5) > span",
-    "_description": "Data de julgamento (ex: 25/04/2023)"
-  },
+    "relator": {
+      "selector": "h4:nth-of-type(3) > span",
+      "_description": "Ministro relator (ex: Min. MARCO AURÉLIO)"
+    },
 
-  "data_publicacao": {
-    "selector": "h4:nth-of-type(6) > span",
-    "_description": "Data de publicação (ex: 16/06/2023)"
-  },
+    "redator_acordao": {
+      "selector": "h4:nth-of-type(4) > span",
+      "_description": "Ministro redator do acórdão (ex: Min. EDSON FACHIN)"
+    },
 
-  "tipo_decisao": {
-    "selector": "div.result-container > span",
-    "_description": "Tipo de decisão (ex: Repercussão Geral – Mérito)"
-  },
+    "data_julgamento": {
+      "selector": "h4:nth-of-type(5) > span",
+      "_description": "Data de julgamento (ex: 25/04/2023)"
+    },
 
-  "ementa": {
-    "selector": "p.jud-text.m-0",
-    "_description": "Ementa completa do acórdão"
-  },
+    "data_publicacao": {
+      "selector": "h4:nth-of-type(6) > span",
+      "_description": "Data de publicação (ex: 16/06/2023)"
+    },
 
-  "link_detalhes": {
-    "selector": "a[mattooltip='Dados completos']",
-    "attribute": "href",
-    "_description": "Link para página de detalhes"
-  },
+    "tipo_decisao": {
+      "selector": "div.result-container > span",
+      "_description": "Tipo de decisão (ex: Repercussão Geral – Mérito)"
+    },
 
-  "link_acompanhamento": {
-    "selector": "a[mattooltip='Acompanhamento processual']",
-    "attribute": "href",
-    "_description": "Link para acompanhamento processual"
-  },
+    "ementa": {
+      "selector": "p.jud-text.m-0",
+      "_description": "Ementa completa do acórdão"
+    },
 
-  "link_tema_repercussao": {
-    "selector": "a[mattooltip='Consultar tema de repercussão geral']",
-    "attribute": "href",
-    "_description": "Link para tema de repercussão geral (quando aplicável)"
+    "link_detalhes": {
+      "selector": "a[mattooltip='Dados completos']",
+      "attribute": "href",
+      "_description": "Link para página de detalhes"
+    },
+
+    "link_acompanhamento": {
+      "selector": "a[mattooltip='Acompanhamento processual']",
+      "attribute": "href",
+      "_description": "Link para acompanhamento processual"
+    },
+
+    "link_tema_repercussao": {
+      "selector": "a[mattooltip='Consultar tema de repercussão geral']",
+      "attribute": "href",
+      "_description": "Link para tema de repercussão geral (quando aplicável)"
+    }
   }
 }
 
