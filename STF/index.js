@@ -45,21 +45,6 @@ const LOG_DIR = "logs";
 const SCREENSHOT_DIR = "screenshots";
 const SCRAP_DIR = "scraps";
 
-// Mapeamento de campos amigáveis (busca.json) para nomes técnicos (URL params)
-const FIELD_MAPPING = {
-  "Pesquisa livre": "queryString",
-  "Base de dados": "base",
-  "Pesquisar no inteiro teor": "pesquisa_inteiro_teor",
-  "Pesquisar com sinônimos": "sinonimo",
-  "Pesquisar no plural": "plural",
-  "Pesquisar radicais": "radicais",
-  "Busca exata": "buscaExata",
-  "Pagina": "page",
-  "Resultados por página": "pageSize",
-  "Ordenar por": "sort",
-  "Ordem": "sortBy",
-};
-
 let logFilePath = null;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -139,9 +124,9 @@ function loadConfig(filename) {
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Converte campos amigáveis para campos técnicos
+ * Converte campos amigáveis para campos técnicos usando fields.json
  */
-function convertFriendlyFieldsToTechnical(buscaConfig) {
+function convertFriendlyFieldsToTechnical(buscaConfig, urlParamsMapping) {
   const technicalConfig = {};
 
   // Converter campos amigáveis para técnicos
@@ -151,17 +136,17 @@ function convertFriendlyFieldsToTechnical(buscaConfig) {
       continue;
     }
 
-    // Se existe mapeamento, usar o nome técnico
-    const technicalName = FIELD_MAPPING[friendlyName] || friendlyName;
+    // Se existe mapeamento no fields.json, usar o nome técnico
+    const technicalName = urlParamsMapping[friendlyName] || friendlyName;
     technicalConfig[technicalName] = value;
   }
 
   return technicalConfig;
 }
 
-function buildSearchUrl(params) {
-  // Converter campos amigáveis para técnicos
-  const technicalParams = convertFriendlyFieldsToTechnical(params);
+function buildSearchUrl(params, urlParamsMapping) {
+  // Converter campos amigáveis para técnicos usando mapeamento do fields.json
+  const technicalParams = convertFriendlyFieldsToTechnical(params, urlParamsMapping);
 
   const queryParams = new URLSearchParams();
 
@@ -717,7 +702,11 @@ async function main() {
     log("📂 Carregando configurações...", "INFO");
     const buscaConfig = loadConfig("busca.json");
     const fieldsConfig = loadConfig("fields.json");
+    const urlParamsMapping = fieldsConfig.url_params || {};
+    const extractionConfig = fieldsConfig.extraction || fieldsConfig; // Fallback para compatibilidade
     log("✅ Configurações carregadas", "SUCCESS");
+    log(`   📋 ${Object.keys(urlParamsMapping).length} mapeamentos de URL`, "INFO");
+    log(`   📋 ${Object.keys(extractionConfig).length} seletores de extração`, "INFO");
 
     // Parsear paginação (aceita tanto "Pagina" quanto "page")
     const paginaValue = buscaConfig["Pagina"] || buscaConfig.page || "1";
@@ -823,8 +812,8 @@ async function main() {
       log("", "INFO");
       log(`📄 Processando página ${pageNum}...`, "INFO");
 
-      // Construir URL
-      const url = buildSearchUrl({ ...buscaConfig, page: pageNum });
+      // Construir URL usando mapeamento do fields.json
+      const url = buildSearchUrl({ ...buscaConfig, page: pageNum }, urlParamsMapping);
       log(`🔗 URL: ${url}`, "INFO");
 
       // Acessar página com retry
@@ -897,8 +886,8 @@ async function main() {
         continue;
       }
 
-      // Extrair dados
-      const items = await extractData(page, fieldsConfig);
+      // Extrair dados usando seletores do fields.json
+      const items = await extractData(page, extractionConfig);
       allItems.push(...items);
 
       log(`✅ Página ${pageNum}: ${items.length} itens extraídos`, "SUCCESS");
