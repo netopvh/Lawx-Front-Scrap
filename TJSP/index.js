@@ -1019,10 +1019,14 @@ function parsePagination(paginaValue, totalPages = null) {
 }
 
 /**
- * Extrai dados estruturados de uma página de resultados
+ * Extrai dados estruturados de uma página de resultados usando fields.json
  */
 async function extractPageData(page) {
-  return await page.evaluate(() => {
+  // Carregar configuração de campos
+  const fieldsConfig = JSON.parse(fs.readFileSync(path.join("config", "fields.json"), "utf-8"));
+  const extractionConfig = fieldsConfig.extraction;
+
+  return await page.evaluate((config) => {
     const tabsDiv = document.querySelector('div#tabs');
     if (!tabsDiv) return null;
 
@@ -1032,8 +1036,8 @@ async function extractPageData(page) {
       return (element.innerText || element.textContent || "").trim();
     }
 
-    // Extrair informações de paginação
-    const paginacaoDiv = tabsDiv.querySelector('#paginacaoSuperior-A');
+    // Extrair informações de paginação usando config
+    const paginacaoDiv = tabsDiv.querySelector(config.paginacao.selector);
     let totalResultados = 0;
     let resultadosInicio = 0;
     let resultadosFim = 0;
@@ -1041,7 +1045,8 @@ async function extractPageData(page) {
 
     if (paginacaoDiv) {
       const paginacaoText = getCleanText(paginacaoDiv);
-      const match = paginacaoText.match(/Resultados\s+(\d+)\s+a\s+(\d+)\s+de\s+(\d+)/);
+      const regex = new RegExp(config.paginacao.regex_resultados);
+      const match = paginacaoText.match(regex);
       if (match) {
         resultadosInicio = parseInt(match[1]);
         resultadosFim = parseInt(match[2]);
@@ -1049,7 +1054,7 @@ async function extractPageData(page) {
       }
 
       // Detectar página atual
-      const paginaAtualSpan = paginacaoDiv.querySelector('span.paginacaoResultados');
+      const paginaAtualSpan = paginacaoDiv.querySelector(config.paginacao.selector_pagina_atual);
       if (paginaAtualSpan) {
         const paginaMatch = getCleanText(paginaAtualSpan).match(/(\d+)/);
         if (paginaMatch) {
@@ -1067,99 +1072,100 @@ async function extractPageData(page) {
       items: []
     };
 
-    // Extrair itens de resultado (cada <tr> com classe fundocinza1)
-    const resultItems = tabsDiv.querySelectorAll('tr.fundocinza1');
+    // Extrair itens de resultado usando config
+    const resultItems = tabsDiv.querySelectorAll(config.resultados.selector);
 
     resultItems.forEach((tr) => {
       const item = {};
 
       // Extrair número do processo
-      const processoLink = tr.querySelector('a.esajLinkLogin.downloadEmenta[cdacordao]');
-      if (processoLink) {
-        item.numero_processo = getCleanText(processoLink);
-      } else {
-        item.numero_processo = "";
-      }
+      const processoEl = tr.querySelector(config.numero_processo.selector);
+      item.numero_processo = processoEl ? getCleanText(processoEl) : "";
 
       // Extrair URL do PDF
-      item.pdf_url = "";
-      const pdfLink = tr.querySelector('a.downloadEmenta[cdacordao]');
-      if (pdfLink) {
-        const cdAcordao = pdfLink.getAttribute('cdacordao');
+      const pdfEl = tr.querySelector(config.pdf_url.selector);
+      if (pdfEl) {
+        const cdAcordao = pdfEl.getAttribute(config.pdf_url.attribute);
         if (cdAcordao) {
-          item.pdf_url = `https://esaj.tjsp.jus.br/cjsg/getArquivo.do?cdAcordao=${cdAcordao}&conversao=pdf`;
+          item.pdf_url = config.pdf_url.url_template.replace('{cdacordao}', cdAcordao);
+        } else {
+          item.pdf_url = "";
         }
+      } else {
+        item.pdf_url = "";
       }
 
       // Extrair Classe/Assunto
-      const classeAssuntoRow = tr.querySelector('tr.ementaClass2 td strong');
-      if (classeAssuntoRow && getCleanText(classeAssuntoRow) === "Classe/Assunto:") {
-        const classeAssuntoText = getCleanText(classeAssuntoRow.parentElement);
-        item.classe_assunto = classeAssuntoText.replace("Classe/Assunto:", "").trim();
+      const classeAssuntoEl = tr.querySelector(config.classe_assunto.selector);
+      if (classeAssuntoEl && getCleanText(classeAssuntoEl) === config.classe_assunto.label) {
+        const classeAssuntoText = getCleanText(classeAssuntoEl.parentElement);
+        item.classe_assunto = classeAssuntoText.replace(config.classe_assunto.label, "").trim();
       } else {
         item.classe_assunto = "";
       }
 
-      // Extrair Relator
-      const relatorRows = tr.querySelectorAll('tr.ementaClass2');
-      for (const row of relatorRows) {
-        const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Relator(a):") {
-          item.relator = getCleanText(row.querySelector('td')).replace("Relator(a):", "").trim();
-          break;
-        }
-      }
-      if (!item.relator) item.relator = "";
+      // Extrair campos que usam "text_after_label_in_rows" (relator, comarca, etc.)
+      const rows = tr.querySelectorAll(config.relator.selector);
 
-      // Extrair Comarca
-      for (const row of relatorRows) {
+      // Relator
+      item.relator = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Comarca:") {
-          item.comarca = getCleanText(row.querySelector('td')).replace("Comarca:", "").trim();
+        if (strong && getCleanText(strong) === config.relator.label) {
+          item.relator = getCleanText(row.querySelector('td')).replace(config.relator.label, "").trim();
           break;
         }
       }
-      if (!item.comarca) item.comarca = "";
 
-      // Extrair Órgão julgador
-      for (const row of relatorRows) {
+      // Comarca
+      item.comarca = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Órgão julgador:") {
-          item.orgao_julgador = getCleanText(row.querySelector('td')).replace("Órgão julgador:", "").trim();
+        if (strong && getCleanText(strong) === config.comarca.label) {
+          item.comarca = getCleanText(row.querySelector('td')).replace(config.comarca.label, "").trim();
           break;
         }
       }
-      if (!item.orgao_julgador) item.orgao_julgador = "";
 
-      // Extrair Data do julgamento
-      for (const row of relatorRows) {
+      // Órgão julgador
+      item.orgao_julgador = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Data do julgamento:") {
-          item.data_julgamento = getCleanText(row.querySelector('td')).replace("Data do julgamento:", "").trim();
+        if (strong && getCleanText(strong) === config.orgao_julgador.label) {
+          item.orgao_julgador = getCleanText(row.querySelector('td')).replace(config.orgao_julgador.label, "").trim();
           break;
         }
       }
-      if (!item.data_julgamento) item.data_julgamento = "";
 
-      // Extrair Data de publicação
-      for (const row of relatorRows) {
+      // Data do julgamento
+      item.data_julgamento = "";
+      for (const row of rows) {
         const strong = row.querySelector('strong');
-        if (strong && getCleanText(strong) === "Data de publicação:") {
-          item.data_publicacao = getCleanText(row.querySelector('td')).replace("Data de publicação:", "").trim();
+        if (strong && getCleanText(strong) === config.data_julgamento.label) {
+          item.data_julgamento = getCleanText(row.querySelector('td')).replace(config.data_julgamento.label, "").trim();
           break;
         }
       }
-      if (!item.data_publicacao) item.data_publicacao = "";
+
+      // Data de publicação
+      item.data_publicacao = "";
+      for (const row of rows) {
+        const strong = row.querySelector('strong');
+        if (strong && getCleanText(strong) === config.data_publicacao.label) {
+          item.data_publicacao = getCleanText(row.querySelector('td')).replace(config.data_publicacao.label, "").trim();
+          break;
+        }
+      }
 
       // Extrair Ementa (texto completo, não truncado)
-      const ementaRow = tr.querySelector('tr.ementaClass2 td[colspan="2"] div[align="justify"]');
+      const ementaRow = tr.querySelector(config.ementa.selector);
       if (ementaRow) {
         // Buscar a div oculta que contém a ementa completa
         const ementaCompleta = ementaRow.nextElementSibling;
         if (ementaCompleta && ementaCompleta.style.display === 'none') {
-          item.ementa = getCleanText(ementaCompleta).replace("Ementa:", "").trim();
+          item.ementa = getCleanText(ementaCompleta).replace(config.ementa.label, "").trim();
         } else {
-          item.ementa = getCleanText(ementaRow).replace("Ementa:", "").trim();
+          item.ementa = getCleanText(ementaRow).replace(config.ementa.label, "").trim();
         }
       } else {
         item.ementa = "";
@@ -1172,7 +1178,7 @@ async function extractPageData(page) {
     });
 
     return data;
-  });
+  }, extractionConfig);
 }
 
 /**
