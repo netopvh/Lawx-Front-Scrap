@@ -175,16 +175,25 @@ O parâmetro `base` permite escolher entre diferentes tipos de documentos juríd
 
 ## 📄 Paginação - Regras de Negócio
 
-O campo `"page"` em `config/busca.json` controla quais páginas serão processadas. Você tem **2 formatos** disponíveis:
+O campo `"page"` em `config/busca.json` controla quais páginas serão processadas. Você tem **3 formatos** disponíveis:
 
-### 1. **Intervalo de Páginas**
+### 1. **Todas as Páginas** ⭐ NOVO
+```json
+"page": "TODAS"
+```
+- Processa **TODAS as páginas disponíveis** automaticamente
+- Aceita também: `"ALL"`, `"TODOS"`, `""`
+- O sistema detecta automaticamente o total de páginas após carregar a primeira página
+- ⚠️ **Atenção**: Pode levar muito tempo se houver muitas páginas!
+
+### 2. **Intervalo de Páginas**
 ```json
 "page": "1-5"
 ```
 - Processa **páginas 1, 2, 3, 4 e 5** (intervalo contínuo)
 - Formato: `"início-fim"`
 
-### 2. **Páginas Específicas**
+### 3. **Páginas Específicas**
 ```json
 "page": "1,3,5,10"
 ```
@@ -195,6 +204,10 @@ O campo `"page"` em `config/busca.json` controla quais páginas serão processad
 
 | Configuração | Resultado |
 |--------------|-----------|
+| `"page": "TODAS"` | **Todas as páginas disponíveis** |
+| `"page": "ALL"` | **Todas as páginas disponíveis** |
+| `"page": "TODOS"` | **Todas as páginas disponíveis** |
+| `"page": ""` | **Todas as páginas disponíveis** |
 | `"page": "1-3"` | Páginas 1, 2 e 3 |
 | `"page": "1,5,10"` | Páginas 1, 5 e 10 |
 | `"page": "2-5"` | Páginas 2, 3, 4 e 5 |

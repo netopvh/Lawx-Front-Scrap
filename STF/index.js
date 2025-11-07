@@ -275,7 +275,9 @@ async function extractData(page, fieldsConfig) {
       const resultElements = document.querySelectorAll(resultSelector);
 
       resultElements.forEach((element) => {
-        const item = {};
+        const item = {
+          sigla_tribunal: "STF" // Identificação do tribunal de origem
+        };
 
         // Extrair cada campo configurado
         for (const [fieldName, fieldConfig] of Object.entries(config)) {
@@ -606,6 +608,7 @@ async function uploadToPinecone(items) {
               id: item.numero_processo.replace(/[^0-9]/g, ""), // Remover caracteres especiais do ID
               values: embedding,
               metadata: {
+                sigla_tribunal: "STF", // Identificação do tribunal de origem
                 numero_processo: item.numero_processo,
                 orgao_julgador: item.orgao_julgador || "",
                 relator: item.relator || "",
