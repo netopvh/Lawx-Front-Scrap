@@ -1660,10 +1660,20 @@ async function runScraper(browser, url) {
       log("ℹ️ Nenhum CAPTCHA detectado após submissão (ou já resolvido)", "INFO");
     }
 
+    // Aguardar navegação/carregamento da página de resultados
+    log("⏳ Aguardando carregamento completo da página de resultados...", "INFO");
+    try {
+      // Aguardar até que a página tenha conteúdo (networkidle2 = sem requisições por 500ms)
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+      log("✅ Navegação concluída!", "SUCCESS");
+    } catch (navError) {
+      log("⚠️ Timeout aguardando navegação, continuando...", "WARNING");
+    }
+
     log("📄 Página de resultados carregada!", "SUCCESS");
 
     // Aguardar um pouco para a página carregar completamente
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Verificar novamente se houve falha no bypass APÓS submeter o formulário
     log("🔍 Verificando se há mensagem de erro após submissão...", "INFO");
@@ -1709,15 +1719,29 @@ async function runScraper(browser, url) {
       const noResults = document.querySelector('div.mensagemAlerta, div.mensagemAviso');
       const noResultsText = noResults ? (noResults.innerText || noResults.textContent || '').trim() : '';
 
+      // Capturar informações adicionais para diagnóstico
+      const bodyText = document.body ? (document.body.innerText || '').substring(0, 500) : '';
+      const title = document.title || '';
+      const url = window.location.href || '';
+
       return {
         tabsExists: tabs !== null,
         noResults: noResults !== null,
-        noResultsText: noResultsText
+        noResultsText: noResultsText,
+        bodyText: bodyText,
+        title: title,
+        url: url
       };
     });
 
     if (!pageCheck.tabsExists) {
       log("⚠️ Div#tabs não encontrada na página!", "WARNING");
+
+      // Log de diagnóstico
+      log(`📄 Título da página: "${pageCheck.title}"`, "INFO");
+      log(`🔗 URL atual: ${pageCheck.url}`, "INFO");
+      log(`📝 Primeiros 500 caracteres do body:`, "INFO");
+      log(`   ${pageCheck.bodyText}`, "INFO");
 
       // Verificar se é mensagem de "nenhum resultado"
       if (pageCheck.noResults) {
