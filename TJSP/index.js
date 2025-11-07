@@ -352,14 +352,41 @@ function closeLog() {
 }
 
 /**
- * Limpa todos os cookies do browser
+ * Limpa todos os cookies, cache e storage do browser de forma agressiva
  */
 async function clearAllCookies(page) {
   try {
     const client = await page.target().createCDPSession();
+
+    // Limpar cookies
     await client.send('Network.clearBrowserCookies');
+
+    // Limpar cache
     await client.send('Network.clearBrowserCache');
-    log("🧹 Cookies e cache limpos com sucesso", "SUCCESS");
+
+    // Limpar todos os storages (localStorage, sessionStorage, indexedDB, etc)
+    await client.send('Storage.clearDataForOrigin', {
+      origin: '*',
+      storageTypes: 'all'
+    });
+
+    // Limpar via JavaScript também (redundância para garantir)
+    await page.evaluate(() => {
+      // Limpar localStorage
+      try { localStorage.clear(); } catch (e) {}
+
+      // Limpar sessionStorage
+      try { sessionStorage.clear(); } catch (e) {}
+
+      // Limpar cookies via document.cookie
+      try {
+        document.cookie.split(";").forEach(function(c) {
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      } catch (e) {}
+    });
+
+    log("🧹 Cookies, cache e storage limpos com sucesso (modo agressivo)", "SUCCESS");
     return true;
   } catch (error) {
     log(`⚠️ Erro ao limpar cookies: ${error.message}`, "WARNING");
@@ -421,6 +448,10 @@ async function connectBrowser(attemptNumber = 1) {
   log(`🔗 Conectando ao browser Scrapeless (Tentativa ${attemptNumber})...`, "INFO");
   log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
   log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
+
+  // Log da URL de conexão (sem token por segurança)
+  const debugURL = connectionURL.replace(/token=[^&]+/, 'token=***');
+  log(`   🔗 URL: ${debugURL}`, "INFO");
   log("🖐️ Usando fingerprint customizado:", "INFO");
   log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
   log(`   Platform: ${fingerprint.platform}`, "INFO");
@@ -1391,9 +1422,9 @@ async function runScraper(browser, url) {
       throw new Error("Timeout aguardando resolução do CAPTCHA. Verifique conexão com Scrapeless.");
     }
 
-    // Aguardar um pouco após resolver o CAPTCHA
-    log("⏱️ Aguardando 3 segundos após resolução do CAPTCHA...", "INFO");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Aguardar um pouco após resolver o CAPTCHA (aumentado para 5s para garantir validação)
+    log("⏱️ Aguardando 5 segundos após resolução do CAPTCHA...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Verificar se a página está realmente pronta (sem overlay de CAPTCHA)
     log("🔍 Verificando se página está completamente carregada...", "INFO");
@@ -1626,6 +1657,10 @@ async function runScraper(browser, url) {
 
     if (postSubmitCheck.failed) {
       log("❌ FALHA NO BYPASS DO RECAPTCHA DETECTADA APÓS SUBMISSÃO!", "ERROR");
+
+      // Limpar cookies imediatamente após detectar falha
+      log("🧹 Limpando cookies após falha no bypass do reCAPTCHA...", "INFO");
+      await clearAllCookies(page);
 
       // Capturar screenshot do erro com nome correto
       const errorFilename = getTimestampedFilename("captcha-bypass-fail", "png");
