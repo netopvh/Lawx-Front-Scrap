@@ -212,13 +212,15 @@ async function isCaptchaResolved(page) {
  * Aguarda a resolução do CAPTCHA com abordagem inteligente:
  * 1. Aguarda evento "Captcha.detected" do Scrapeless (indica que CAPTCHA foi encontrado)
  * 2. Aguarda evento "Captcha.solveFinished" (indica que foi resolvido)
- * 3. Se não houver CAPTCHA, verifica visualmente e continua
- * Timeout padrão: 45 segundos
+ * 3. Para Cloudflare, também aguarda elemento específico da página (conforme documentação Scrapeless)
+ * 4. Se não houver CAPTCHA, verifica visualmente e continua
+ * Timeout padrão: 180 segundos (Cloudflare Turnstile pode demorar até 120s)
  */
-async function onCaptchaFinished(page, timeout = 45_000) {
+async function onCaptchaFinished(page, timeout = 180_000) {
   const startTime = Date.now();
   let captchaDetected = false;
   let captchaSolved = false;
+  let captchaType = null;
 
   log("⏳ Aguardando detecção e resolução do CAPTCHA...", "INFO");
 
@@ -232,18 +234,42 @@ async function onCaptchaFinished(page, timeout = 45_000) {
     // Listener para detecção de CAPTCHA
     const onDetected = (msg) => {
       captchaDetected = true;
-      log("🔍 CAPTCHA detectado - aguardando resolução pelo Scrapeless...", "INFO");
+      captchaType = msg.type; // Armazenar tipo de CAPTCHA
+      log(`🔍 CAPTCHA detectado (${msg.type}) - aguardando resolução pelo Scrapeless...`, "INFO");
     };
 
     // Listener para resolução de CAPTCHA
-    const onSolved = (msg) => {
+    const onSolved = async (msg) => {
       captchaSolved = true;
       log("✅ CAPTCHA resolvido pelo Scrapeless (evento CDP)!", "SUCCESS");
-      cleanup();
 
       const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
       log(`⏱️ CAPTCHA resolvido em ${elapsedTime}s`, "SUCCESS");
 
+      // Para Cloudflare, aguardar elemento específico da página (conforme documentação Scrapeless)
+      if (captchaType === 'cloudflare') {
+        log("🔍 Cloudflare detectado - aguardando elemento da página para confirmar bypass...", "INFO");
+        try {
+          // Aguardar qualquer elemento que indique que a página carregou (não apenas o Cloudflare)
+          await page.waitForFunction(() => {
+            // Verificar se não está mais na página de challenge do Cloudflare
+            const body = document.body.innerText || '';
+            const isCloudflareChallenge = body.includes('Just a moment') ||
+                                         body.includes('Checking your browser') ||
+                                         body.includes('Please wait');
+
+            // Se não é página de challenge, consideramos que passou
+            return !isCloudflareChallenge;
+          }, { timeout: 30000 });
+
+          log("✅ Cloudflare bypass confirmado - página carregada!", "SUCCESS");
+        } catch (waitError) {
+          log(`⚠️ Timeout aguardando confirmação do bypass: ${waitError.message}`, "WARNING");
+          log("   Continuando mesmo assim...", "INFO");
+        }
+      }
+
+      cleanup();
       resolve({ method: "CDP", msg });
     };
 
@@ -282,7 +308,11 @@ async function onCaptchaFinished(page, timeout = 45_000) {
             try {
               const filename = getTimestampedFilename(`captcha-waiting-${screenshotCounter}`, "png");
               const screenshotPath = path.join("screenshots", filename);
-              await page.screenshot({ path: screenshotPath, fullPage: true });
+              // Adicionar timeout de 5s para screenshot periódico
+              await Promise.race([
+                page.screenshot({ path: screenshotPath, fullPage: true }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Screenshot timeout')), 5000))
+              ]);
               log(`📸 Screenshot periódico ${screenshotCounter} salvo: ${screenshotPath}`, "INFO");
 
               // Identificar tipo de CAPTCHA na página
@@ -600,6 +630,28 @@ async function connectBrowser() {
   try {
     log("🔌 Conectando ao Scrapeless Cloud Browser...", "INFO");
 
+    // Configuração de fingerprint customizado para evitar detecção
+    const fingerprint = {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      platform: 'Windows',
+      screen: {
+        width: 1920,
+        height: 1080
+      },
+      localization: {
+        languages: ['pt-BR', 'pt', 'en-US', 'en'],
+        timezone: 'America/Sao_Paulo',
+        geolocation: {
+          latitude: -23.5505, // São Paulo, Brasil
+          longitude: -46.6333,
+          accuracy: 100
+        }
+      },
+      args: {
+        '--window-size': '1920,1080',
+      }
+    };
+
     // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
     const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
     const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
@@ -610,6 +662,7 @@ async function connectBrowser() {
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
+      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
       incognito: true, // Modo anônimo para evitar problemas com cache
     };
 
@@ -623,6 +676,7 @@ async function connectBrowser() {
 
     log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
     log(`   Modo Incognito: ✅ Ativado`, "INFO");
+    log(`   Geolocation: São Paulo, Brasil (-23.5505, -46.6333)`, "INFO");
     log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
     log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
 
@@ -647,13 +701,16 @@ async function navigateToSTJ(page) {
   try {
     const url = STJ_BASE_URL;
 
-    log("🛡️ Aplicando técnicas anti-detecção...", "INFO");
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-      Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
-      window.chrome = { runtime: {} };
-    });
+    // NOTA: Técnicas anti-detecção REMOVIDAS pois interferem com o solver do Scrapeless
+    // O Scrapeless já tem suas próprias técnicas anti-detecção embutidas
+    // Adicionar técnicas customizadas quebra o solver de Cloudflare Turnstile
+    // log("🛡️ Aplicando técnicas anti-detecção...", "INFO");
+    // await page.evaluateOnNewDocument(() => {
+    //   Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    //   Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    //   Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+    //   window.chrome = { runtime: {} };
+    // });
 
     // Configurar listener de CAPTCHA ANTES de navegar
     log("👂 Configurando listener de CAPTCHA...", "INFO");
@@ -694,8 +751,8 @@ async function navigateToSTJ(page) {
     try {
       // Tentar aguardar resolução do CAPTCHA OU aparecimento do formulário
       const result = await Promise.race([
-        onCaptchaFinished(page, 120000), // 120 segundos
-        page.waitForSelector('input[name="livre"]', { timeout: 120000 }).then(() => ({
+        onCaptchaFinished(page, 180000), // 180 segundos (Cloudflare Turnstile pode demorar até 120s)
+        page.waitForSelector('input[name="livre"]', { timeout: 180000 }).then(() => ({
           method: 'form-appeared',
           success: true
         }))
@@ -708,6 +765,16 @@ async function navigateToSTJ(page) {
       log("═══════════════════════════════════════════════════════", "SUCCESS");
       log("", "INFO");
 
+      // Aguardar navegação após Cloudflare (se houver)
+      try {
+        log("⏳ Aguardando navegação após Cloudflare...", "INFO");
+        await page.waitForNavigation({ timeout: 10000, waitUntil: "domcontentloaded" });
+        log("✅ Navegação concluída", "SUCCESS");
+      } catch (navError) {
+        // Não há problema se não houver navegação
+        log("   Sem navegação adicional detectada", "INFO");
+      }
+
       // Aguardar um pouco para garantir que a página está totalmente carregada
       await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -715,7 +782,11 @@ async function navigateToSTJ(page) {
       try {
         const formFilename = getTimestampedFilename("formulario-pos-captcha", "png");
         const formScreenshot = path.join("screenshots", formFilename);
-        await page.screenshot({ path: formScreenshot, fullPage: true });
+        // Adicionar timeout de 10s para screenshot do formulário
+        await Promise.race([
+          page.screenshot({ path: formScreenshot, fullPage: true }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Screenshot timeout')), 10000))
+        ]);
         log(`📸 Screenshot do formulário salvo: ${formScreenshot}`, "SUCCESS");
       } catch (screenshotError) {
         log(`⚠️ Erro ao capturar screenshot do formulário: ${screenshotError.message}`, "WARNING");
