@@ -720,12 +720,15 @@ async function main() {
     const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
     const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
 
+    // Verificar se deve usar modo anônimo (padrão: FALSE)
+    const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
+
     const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STF Scraper",
-      incognito: true, // SEMPRE usar modo anônimo
+      incognito: useIncognito,
     };
 
     // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
@@ -737,7 +740,7 @@ async function main() {
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
-    log(`   Modo Incognito: ✅ Ativado`, "INFO");
+    log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
 
     browser = await Promise.race([
       puppeteer.connect({

@@ -656,6 +656,9 @@ async function connectBrowser() {
     const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
     const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
 
+    // Verificar se deve usar modo anônimo (padrão: FALSE)
+    const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
+
     // Construir query params para Scrapeless
     const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
@@ -663,7 +666,7 @@ async function connectBrowser() {
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
       fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
-      incognito: true, // Modo anônimo para evitar problemas com cache
+      incognito: useIncognito,
     };
 
     // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
@@ -675,7 +678,7 @@ async function connectBrowser() {
     const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
 
     log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
-    log(`   Modo Incognito: ✅ Ativado`, "INFO");
+    log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
     log(`   Geolocation: São Paulo, Brasil (-23.5505, -46.6333)`, "INFO");
     log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
     log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");

@@ -367,6 +367,9 @@ async function connectBrowser(attemptNumber = 1) {
   const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
   const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
 
+  // Verificar se deve usar modo anônimo (padrão: FALSE)
+  const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
+
   // Configuração do Browser Scrapeless
   const queryParams = {
     token: process.env.SCRAPELESS_TOKEN,
@@ -374,7 +377,7 @@ async function connectBrowser(attemptNumber = 1) {
     sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
     sessionName: `${process.env.SCRAPELESS_SESSION_NAME || "TJSP Scraper"} - Tentativa ${attemptNumber}`,
     fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
-    incognito: true, // SEMPRE usar modo anônimo
+    incognito: useIncognito,
   };
 
   // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
@@ -387,7 +390,7 @@ async function connectBrowser(attemptNumber = 1) {
 
   log(`🔗 Conectando ao browser Scrapeless (Tentativa ${attemptNumber})...`, "INFO");
   log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
-  log(`   Modo Incognito: ✅ Ativado`, "INFO");
+  log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
   log("🖐️ Usando fingerprint customizado:", "INFO");
   log(`   User-Agent: ${fingerprint.userAgent}`, "INFO");
   log(`   Platform: ${fingerprint.platform}`, "INFO");
