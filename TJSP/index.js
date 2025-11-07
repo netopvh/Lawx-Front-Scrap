@@ -352,6 +352,22 @@ function closeLog() {
 }
 
 /**
+ * Limpa todos os cookies do browser
+ */
+async function clearAllCookies(page) {
+  try {
+    const client = await page.target().createCDPSession();
+    await client.send('Network.clearBrowserCookies');
+    await client.send('Network.clearBrowserCache');
+    log("🧹 Cookies e cache limpos com sucesso", "SUCCESS");
+    return true;
+  } catch (error) {
+    log(`⚠️ Erro ao limpar cookies: ${error.message}`, "WARNING");
+    return false;
+  }
+}
+
+/**
  * Conecta ao Scrapeless Cloud Browser com configurações
  */
 async function connectBrowser(attemptNumber = 1) {
@@ -1317,6 +1333,10 @@ async function runScraper(browser, url) {
     log("📄 Criando nova página...", "INFO");
     page = await browser.newPage();
 
+    // Limpar cookies e cache ANTES de qualquer navegação
+    log("🧹 Limpando cookies e cache...", "INFO");
+    await clearAllCookies(page);
+
     // Aplicar técnicas anti-detecção
     log("🛡️ Aplicando técnicas anti-detecção...", "INFO");
     await applyAntiDetection(page);
@@ -1355,6 +1375,11 @@ async function runScraper(browser, url) {
       log("   3. Problemas de conexão de rede", "ERROR");
       log("   4. CAPTCHA não foi apresentado (página já estava liberada)", "ERROR");
       log("   5. Tipo de CAPTCHA não suportado pelo Scrapeless", "ERROR");
+      log("   6. Cookies antigos impedindo resolução", "ERROR");
+
+      // Limpar cookies em caso de falha
+      log("🧹 Limpando cookies após falha no CAPTCHA...", "INFO");
+      await clearAllCookies(page);
 
       // Capturar screenshot do timeout
       const timeoutFilename = getTimestampedFilename("captcha-timeout", "png");

@@ -697,6 +697,22 @@ async function main() {
     // Garantir que diretórios existem
     ensureDirectories();
 
+    /**
+     * Limpa todos os cookies do browser
+     */
+    async function clearAllCookies(page) {
+      try {
+        const client = await page.target().createCDPSession();
+        await client.send('Network.clearBrowserCookies');
+        await client.send('Network.clearBrowserCache');
+        log("🧹 Cookies e cache limpos com sucesso", "SUCCESS");
+        return true;
+      } catch (error) {
+        log(`⚠️ Erro ao limpar cookies: ${error.message}`, "WARNING");
+        return false;
+      }
+    }
+
     // Carregar configurações
     log("📂 Carregando configurações...", "INFO");
     const buscaConfig = loadConfig("busca.json");
@@ -762,6 +778,10 @@ async function main() {
 
     page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
+
+    // Limpar cookies e cache ANTES de qualquer navegação
+    log("🧹 Limpando cookies e cache...", "INFO");
+    await clearAllCookies(page);
 
     // Ignorar erros de certificado SSL
     await page.setBypassCSP(true);

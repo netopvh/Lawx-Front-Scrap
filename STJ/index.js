@@ -624,6 +624,22 @@ async function ensurePineconeIndex() {
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
+ * Limpa todos os cookies do browser
+ */
+async function clearAllCookies(page) {
+  try {
+    const client = await page.target().createCDPSession();
+    await client.send('Network.clearBrowserCookies');
+    await client.send('Network.clearBrowserCache');
+    log("🧹 Cookies e cache limpos com sucesso", "SUCCESS");
+    return true;
+  } catch (error) {
+    log(`⚠️ Erro ao limpar cookies: ${error.message}`, "WARNING");
+    return false;
+  }
+}
+
+/**
  * Conecta ao Scrapeless Cloud Browser
  */
 async function connectBrowser() {
@@ -803,6 +819,10 @@ async function navigateToSTJ(page) {
       log(`   Erro: ${error.message}`, "ERROR");
       log("═══════════════════════════════════════════════════════", "ERROR");
       log("", "ERROR");
+
+      // Limpar cookies em caso de falha
+      log("🧹 Limpando cookies após falha no CAPTCHA...", "INFO");
+      await clearAllCookies(page);
 
       // Capturar screenshot de timeout do CAPTCHA
       const isCaptchaTimeoutError = error.message.includes("Timeout") && error.message.includes("CAPTCHA");
@@ -1208,6 +1228,10 @@ async function main() {
     page = await browser.newPage();
 
     await page.setViewport({ width: 1920, height: 1080 });
+
+    // Limpar cookies e cache ANTES de qualquer navegação
+    log("🧹 Limpando cookies e cache...", "INFO");
+    await clearAllCookies(page);
 
     // Navegar para STJ e resolver CAPTCHA
     await navigateToSTJ(page);
