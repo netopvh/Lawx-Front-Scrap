@@ -136,10 +136,17 @@ async function onCaptchaFinished(page, timeout = 45_000) {
       resolve({ method: "CDP", msg });
     };
 
-    // Cleanup de listeners
+    // Variável para armazenar o intervalo de verificação
+    let checkInterval = null;
+
+    // Cleanup de listeners e intervalos
     const cleanup = () => {
       emitter.removeListener("Captcha.detected", onDetected);
       emitter.removeListener("Captcha.solveFinished", onSolved);
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+      }
     };
 
     // Registrar listeners
@@ -154,7 +161,7 @@ async function onCaptchaFinished(page, timeout = 45_000) {
     }, timeout);
 
     // Verificação visual periódica (apenas se CAPTCHA NÃO foi detectado pelo CDP)
-    const checkInterval = setInterval(async () => {
+    checkInterval = setInterval(async () => {
       try {
         // Se CAPTCHA foi detectado pelo CDP, aguardar apenas o evento de resolução
         if (captchaDetected && !captchaSolved) {
@@ -164,7 +171,8 @@ async function onCaptchaFinished(page, timeout = 45_000) {
 
         // Se CAPTCHA já foi resolvido, parar verificação
         if (captchaSolved) {
-          clearInterval(checkInterval);
+          cleanup();
+          clearTimeout(timeoutId);
           return;
         }
 
@@ -176,7 +184,6 @@ async function onCaptchaFinished(page, timeout = 45_000) {
           if (!captchaDetected) {
             log("✅ Nenhum CAPTCHA detectado - página já está liberada!", "SUCCESS");
             cleanup();
-            clearInterval(checkInterval);
             clearTimeout(timeoutId);
 
             const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -186,6 +193,13 @@ async function onCaptchaFinished(page, timeout = 45_000) {
           }
         }
       } catch (error) {
+        // Se houver erro crítico (ex: página fechada), parar verificação
+        if (error.message.includes('detached') || error.message.includes('closed') || error.message.includes('Target closed')) {
+          log(`⚠️ Página foi fechada - parando verificação de CAPTCHA`, "WARNING");
+          cleanup();
+          clearTimeout(timeoutId);
+          return;
+        }
         log(`⚠️ Erro na verificação visual: ${error.message}`, "WARNING");
       }
     }, 2000); // Verificar a cada 2 segundos
