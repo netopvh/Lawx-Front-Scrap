@@ -208,9 +208,24 @@ async function onCaptchaFinished(page, timeout = 45_000) {
 
 /**
  * Aplica técnicas anti-detecção para evitar que o site identifique automação
+ * NOTA: Técnicas experimentais podem INTERFERIR com o solver do Scrapeless
+ * Use ANTI_DETECTION_EXPERIMENTAL=TRUE apenas se necessário
  */
 async function applyAntiDetection(page) {
   try {
+    // Verificar se deve usar técnicas experimentais (padrão: FALSE)
+    const useExperimental = process.env.ANTI_DETECTION_EXPERIMENTAL === "TRUE";
+
+    if (!useExperimental) {
+      log("⚠️ Técnicas anti-detecção experimentais DESATIVADAS (recomendado)", "INFO");
+      log("   Scrapeless já possui anti-detecção embutida", "INFO");
+      log("   Para ativar: ANTI_DETECTION_EXPERIMENTAL=TRUE", "INFO");
+      return;
+    }
+
+    log("🛡️ Aplicando técnicas anti-detecção EXPERIMENTAIS...", "WARNING");
+    log("   ATENÇÃO: Pode interferir com solver do Scrapeless!", "WARNING");
+
     // Remover propriedades que indicam automação
     await page.evaluateOnNewDocument(() => {
       // Sobrescrever navigator.webdriver
@@ -254,17 +269,24 @@ async function applyAntiDetection(page) {
       };
     });
 
-    console.log(" Técnicas anti-detecção aplicadas.");
+    log("✅ Técnicas anti-detecção experimentais aplicadas", "SUCCESS");
   } catch (error) {
-    console.error(" Erro ao aplicar anti-detecção:", error);
+    log(`❌ Erro ao aplicar anti-detecção: ${error.message}`, "ERROR");
   }
 }
 
 /**
  * Gera delay aleatório entre min e max (em ms)
+ * Aplica multiplicador para delays mais humanos se configurado
  */
 function randomDelay(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  // Multiplicador de delay para comportamento mais humano (padrão: 2x)
+  const delayMultiplier = parseFloat(process.env.HUMAN_DELAY_MULTIPLIER || "2.0");
+
+  const baseDelay = Math.floor(Math.random() * (max - min + 1)) + min;
+  const humanDelay = Math.floor(baseDelay * delayMultiplier);
+
+  return humanDelay;
 }
 
 /**
@@ -448,6 +470,12 @@ async function connectBrowser(attemptNumber = 1) {
   log(`🔗 Conectando ao browser Scrapeless (Tentativa ${attemptNumber})...`, "INFO");
   log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
   log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
+
+  // Log de configurações de comportamento
+  const antiDetection = process.env.ANTI_DETECTION_EXPERIMENTAL === "TRUE";
+  const delayMultiplier = parseFloat(process.env.HUMAN_DELAY_MULTIPLIER || "2.0");
+  log(`   Anti-Detecção Experimental: ${antiDetection ? '⚠️ ATIVADO' : '✅ Desativado (recomendado)'}`, "INFO");
+  log(`   Multiplicador de Delay Humano: ${delayMultiplier}x`, "INFO");
 
   // Log da URL de conexão (sem token por segurança)
   const debugURL = connectionURL.replace(/token=[^&]+/, 'token=***');
@@ -1422,9 +1450,9 @@ async function runScraper(browser, url) {
       throw new Error("Timeout aguardando resolução do CAPTCHA. Verifique conexão com Scrapeless.");
     }
 
-    // Aguardar um pouco após resolver o CAPTCHA (aumentado para 5s para garantir validação)
-    log("⏱️ Aguardando 5 segundos após resolução do CAPTCHA...", "INFO");
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    // Aguardar um pouco após resolver o CAPTCHA (aumentado para 10s para garantir validação)
+    log("⏱️ Aguardando 10 segundos após resolução do CAPTCHA...", "INFO");
+    await new Promise((resolve) => setTimeout(resolve, 10000));
 
     // Verificar se a página está realmente pronta (sem overlay de CAPTCHA)
     log("🔍 Verificando se página está completamente carregada...", "INFO");
