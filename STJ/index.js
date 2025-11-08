@@ -627,29 +627,7 @@ async function clearAllCookies(page) {
  */
 async function connectBrowser() {
   try {
-    log("🔌 Conectando ao Scrapeless Cloud Browser...", "INFO");
-
-    // Configuração de fingerprint customizado para evitar detecção
-    const fingerprint = {
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      platform: 'Windows',
-      screen: {
-        width: 1920,
-        height: 1080
-      },
-      localization: {
-        languages: ['pt-BR', 'pt', 'en-US', 'en'],
-        timezone: 'America/Sao_Paulo',
-        geolocation: {
-          latitude: -23.5505, // São Paulo, Brasil
-          longitude: -46.6333,
-          accuracy: 100
-        }
-      },
-      args: {
-        '--window-size': '1920,1080',
-      }
-    };
+    log("🌐 Conectando ao Scrapeless Cloud Browser...", "INFO");
 
     // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
     const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
@@ -658,13 +636,12 @@ async function connectBrowser() {
     // Verificar se deve usar modo anônimo (padrão: FALSE)
     const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
 
-    // Construir query params para Scrapeless
+    // Construir query params para Scrapeless (padrão STF - sem fingerprint)
     const queryParams = {
       token: process.env.SCRAPELESS_TOKEN,
       sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
       sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
       sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
-      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
       incognito: useIncognito,
     };
 
@@ -678,17 +655,19 @@ async function connectBrowser() {
 
     log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
     log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
-    log(`   Geolocation: São Paulo, Brasil (-23.5505, -46.6333)`, "INFO");
-    log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
-    log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
 
-    const browser = await puppeteer.connect({
-      browserWSEndpoint: connectionURL,
-      defaultViewport: null,
-      ignoreHTTPSErrors: true,
-    });
+    const browser = await Promise.race([
+      puppeteer.connect({
+        browserWSEndpoint: connectionURL,
+        defaultViewport: null,
+        ignoreHTTPSErrors: true,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout ao conectar ao Scrapeless (30s)")), 30000)
+      )
+    ]);
 
-    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}`, "SUCCESS");
+    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
     return browser;
   } catch (error) {
     log(`❌ Erro ao conectar ao browser: ${error.message}`, "ERROR");
