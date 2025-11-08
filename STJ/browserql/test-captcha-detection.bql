@@ -1,0 +1,110 @@
+# ═══════════════════════════════════════════════════════════════════════
+# TEST: Detecção de CAPTCHA
+# ═══════════════════════════════════════════════════════════════════════
+#
+# OBJETIVO:
+# Detectar a presença de CAPTCHA (reCAPTCHA v2) na página do STJ.
+#
+# COMO USAR:
+# 1. Acesse: https://www.browserless.io/playground
+# 2. Configure sua API Key no botão ¦¦¦ (Settings)
+# 3. Cole esta query no editor
+# 4. Clique em ▶️ Run
+#
+# RESULTADO ESPERADO:
+# - Detecção de reCAPTCHA v2
+# - Screenshot mostrando o CAPTCHA (se presente)
+# - Informações sobre o tipo de CAPTCHA
+#
+# TIPOS DE CAPTCHA DETECTADOS:
+# - reCAPTCHA v2 (checkbox)
+# - reCAPTCHA v3 (invisible)
+# - hCaptcha
+# - Outros
+# ═══════════════════════════════════════════════════════════════════════
+
+mutation TestCaptchaDetection {
+  
+  # Navegar para página de pesquisa do STJ
+  goto(
+    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", 
+    waitUntil: networkIdle
+  ) {
+    status
+  }
+  
+  # Aguardar carregamento completo
+  wait(duration: 3000) {
+    success
+  }
+  
+  # Detectar reCAPTCHA v2 (checkbox)
+  recaptchaV2: evaluate(
+    expression: "document.querySelector('.g-recaptcha') !== null"
+  ) {
+    value
+  }
+  
+  # Detectar reCAPTCHA v3 (invisible)
+  recaptchaV3: evaluate(
+    expression: "document.querySelector('script[src*=\"recaptcha/api.js\"]') !== null"
+  ) {
+    value
+  }
+  
+  # Detectar iframe do reCAPTCHA
+  recaptchaIframe: evaluate(
+    expression: "document.querySelector('iframe[src*=\"recaptcha\"]') !== null"
+  ) {
+    value
+  }
+  
+  # Detectar hCaptcha
+  hcaptcha: evaluate(
+    expression: "document.querySelector('.h-captcha') !== null"
+  ) {
+    value
+  }
+  
+  # Obter site key do reCAPTCHA (se presente)
+  recaptchaSiteKey: evaluate(
+    expression: "document.querySelector('.g-recaptcha')?.getAttribute('data-sitekey') || 'N/A'"
+  ) {
+    value
+  }
+  
+  # Contar iframes na página
+  iframeCount: evaluate(
+    expression: "document.querySelectorAll('iframe').length"
+  ) {
+    value
+  }
+  
+  # Listar URLs dos iframes
+  iframeUrls: evaluate(
+    expression: "Array.from(document.querySelectorAll('iframe')).map(iframe => iframe.src).join(', ')"
+  ) {
+    value
+  }
+  
+  # Verificar se há scripts do Google reCAPTCHA
+  recaptchaScripts: evaluate(
+    expression: "Array.from(document.querySelectorAll('script')).filter(s => s.src.includes('recaptcha')).map(s => s.src).join(', ')"
+  ) {
+    value
+  }
+  
+  # Capturar screenshot
+  screenshot(fullPage: true) {
+    base64
+  }
+  
+  # Exportar HTML do CAPTCHA (se presente)
+  captchaHtml: html(selector: ".g-recaptcha, .h-captcha, iframe[src*='recaptcha']", clean: {
+    removeAttributes: false,
+    removeNonTextNodes: false
+  }) {
+    html
+  }
+}
+

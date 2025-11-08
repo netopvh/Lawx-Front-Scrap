@@ -627,34 +627,21 @@ async function clearAllCookies(page) {
  */
 async function connectBrowser() {
   try {
-    log("🌐 Conectando ao Scrapeless Cloud Browser...", "INFO");
+    log("🌐 Conectando ao Browserless...", "INFO");
 
-    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
-    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
-    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+    // Obter configurações do Browserless
+    const apiKey = process.env.BROWSERLESS_API_KEY;
+    const region = process.env.BROWSERLESS_REGION || "production-sfo";
 
-    // Verificar se deve usar modo anônimo (padrão: FALSE)
-    const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
-
-    // Construir query params para Scrapeless (padrão STF - sem fingerprint)
-    const queryParams = {
-      token: process.env.SCRAPELESS_TOKEN,
-      sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
-      sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
-      sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
-      incognito: useIncognito,
-    };
-
-    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
-    if (useProxy) {
-      queryParams.proxyCountry = proxyCountry;
+    if (!apiKey) {
+      throw new Error("BROWSERLESS_API_KEY não configurada no .env");
     }
 
-    const query = new URLSearchParams(queryParams);
-    const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
+    // Construir URL de conexão do Browserless
+    const connectionURL = `wss://${region}.browserless.io?token=${apiKey}`;
 
-    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
-    log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
+    log(`   Região: ${region}`, "INFO");
+    log(`   API Key: ${apiKey.substring(0, 8)}...`, "INFO");
 
     const browser = await Promise.race([
       puppeteer.connect({
@@ -663,11 +650,11 @@ async function connectBrowser() {
         ignoreHTTPSErrors: true,
       }),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout ao conectar ao Scrapeless (30s)")), 30000)
+        setTimeout(() => reject(new Error("Timeout ao conectar ao Browserless (30s)")), 30000)
       )
     ]);
 
-    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}!`, "SUCCESS");
+    log(`✅ Conectado ao Browserless (${region})!`, "SUCCESS");
     return browser;
   } catch (error) {
     log(`❌ Erro ao conectar ao browser: ${error.message}`, "ERROR");

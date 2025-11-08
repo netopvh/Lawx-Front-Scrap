@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════════════
+# TEST: Preenchimento de Formulário STJ
+# ═══════════════════════════════════════════════════════════════════════
+#
+# OBJETIVO:
+# Testar o preenchimento do formulário de pesquisa de jurisprudências do STJ.
+#
+# COMO USAR:
+# 1. Acesse: https://www.browserless.io/playground
+# 2. Configure sua API Key no botão ¦¦¦ (Settings)
+# 3. Cole esta query no editor
+# 4. Clique em ▶️ Run
+#
+# RESULTADO ESPERADO:
+# - Formulário preenchido com "Advogado" no campo "Pesquisa livre"
+# - Tribunal "STJ" selecionado
+# - Screenshot mostrando o formulário preenchido
+#
+# SELETORES CSS USADOS:
+# - input[name="livre"] - Campo de pesquisa livre
+# - select[name="tribunal"] - Dropdown de seleção de tribunal
+# ═══════════════════════════════════════════════════════════════════════
+
+mutation TestSTJFormFill {
+  
+  # Navegar para página de pesquisa do STJ
+  goto(
+    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", 
+    waitUntil: networkIdle
+  ) {
+    status
+  }
+  
+  # Aguardar carregamento do formulário
+  waitForSelector(selector: "input[name='livre']", timeout: 10000) {
+    success
+  }
+  
+  # Preencher campo "Pesquisa livre"
+  type(selector: "input[name='livre']", text: "Advogado") {
+    success
+  }
+  
+  # Selecionar tribunal "STJ"
+  select(selector: "select[name='tribunal']", value: "STJ") {
+    success
+  }
+  
+  # Aguardar 2 segundos para visualizar
+  wait(duration: 2000) {
+    success
+  }
+  
+  # Capturar screenshot do formulário preenchido
+  screenshot(fullPage: true) {
+    base64
+  }
+  
+  # Verificar se o CAPTCHA está presente
+  captchaDetected: evaluate(
+    expression: "document.querySelector('.g-recaptcha') !== null"
+  ) {
+    value
+  }
+  
+  # Exportar HTML do formulário
+  formHtml: html(selector: "form", clean: {
+    removeAttributes: false,
+    removeNonTextNodes: false
+  }) {
+    html
+  }
+}
+
