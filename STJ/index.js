@@ -58,23 +58,6 @@ const LOG_DIR = "logs";
 const SCREENSHOT_DIR = "screenshots";
 const SCRAP_DIR = "scraps";
 
-// Mapeamento de campos amigáveis (busca.json) para nomes técnicos (DOM)
-const FIELD_MAPPING = {
-  "Tribunal": "tribunal",
-  "Pesquisa livre": "livre",
-  "Número do processo": "processo",
-  "Classe processual": "classe",
-  "Unidade Federativa": "uf",
-  "Data de publicação (início)": "dtpb1",
-  "Data de publicação (fim)": "dtpb2",
-  "Data de decisão (início)": "dtde1",
-  "Data de decisão (fim)": "dtde2",
-  "Ementa": "ementa",
-  "Nota": "nota",
-  "Número da Súmula": "sumula",
-  "Pagina": "pagina",
-};
-
 let logFilePath = null;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -946,7 +929,7 @@ async function navigateToSTJ(page) {
 /**
  * Converte campos amigáveis para campos técnicos
  */
-function convertFriendlyFieldsToTechnical(buscaConfig) {
+function convertFriendlyFieldsToTechnical(buscaConfig, fieldMapping) {
   const technicalConfig = {};
 
   // Converter campos amigáveis para técnicos
@@ -957,7 +940,7 @@ function convertFriendlyFieldsToTechnical(buscaConfig) {
     }
 
     // Se existe mapeamento, usar o nome técnico
-    const technicalName = FIELD_MAPPING[friendlyName] || friendlyName;
+    const technicalName = fieldMapping[friendlyName] || friendlyName;
     technicalConfig[technicalName] = value;
   }
 
@@ -967,12 +950,12 @@ function convertFriendlyFieldsToTechnical(buscaConfig) {
 /**
  * Preenche o formulário de busca do STJ
  */
-async function fillSearchForm(page, buscaConfig, tribunal) {
+async function fillSearchForm(page, buscaConfig, tribunal, fieldMapping) {
   try {
     log(`📝 Preenchendo formulário de busca para tribunal: ${tribunal}`, "INFO");
 
     // Converter campos amigáveis para técnicos
-    const config = convertFriendlyFieldsToTechnical(buscaConfig);
+    const config = convertFriendlyFieldsToTechnical(buscaConfig, fieldMapping);
 
     // Selecionar tribunal (STJ, TFR, ou ambos)
     if (config.tribunal) {
@@ -1201,7 +1184,9 @@ async function main() {
     log("📂 Carregando configurações...", "INFO");
     const buscaConfig = loadConfig("busca.json");
     const fieldsConfig = loadConfig("fields.json");
+    const formFieldsMapping = fieldsConfig.form_fields || {};
     log("✅ Configurações carregadas", "SUCCESS");
+    log(`   📋 ${Object.keys(formFieldsMapping).length} mapeamentos de formulário`, "INFO");
 
     // Verificar Pinecone
     log("🔍 Verificando índice Pinecone...", "INFO");
@@ -1244,8 +1229,8 @@ async function main() {
       log("═══════════════════════════════════════════════════════", "INFO");
 
       try {
-        // Preencher formulário
-        await fillSearchForm(page, buscaConfig, tribunal);
+        // Preencher formulário usando mapeamento do fields.json
+        await fillSearchForm(page, buscaConfig, tribunal, formFieldsMapping);
 
         // Submeter formulário
         await submitForm(page);

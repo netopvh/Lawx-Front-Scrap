@@ -1,6 +1,23 @@
 {
-  "_comment": "Seletores CSS para extração de dados do STJ e TFR - Baseados na estrutura real do site scon.stj.jus.br",
+  "_comment": "Configuração de campos para STJ e TFR - Mapeamento de formulário e seletores de extração",
   "_note": "STJ usa estrutura de divs com classes .documento, .docTitulo, .docDados, .docTexto",
+
+  "form_fields": {
+    "_description": "Mapeamento de campos amigáveis (busca.json) para nomes técnicos dos campos do formulário",
+    "Tribunal": "tribunal",
+    "Pesquisa livre": "livre",
+    "Número do processo": "processo",
+    "Classe processual": "classe",
+    "Unidade Federativa": "uf",
+    "Data de publicação (início)": "dtpb1",
+    "Data de publicação (fim)": "dtpb2",
+    "Data de decisão (início)": "dtde1",
+    "Data de decisão (fim)": "dtde2",
+    "Ementa": "ementa",
+    "Nota": "nota",
+    "Número da Súmula": "sumula",
+    "Pagina": "pagina"
+  },
 
   "STJ": {
     "resultados": {
