@@ -16,9 +16,10 @@
 # - Tribunal "STJ" selecionado
 # - Screenshot mostrando o formulário preenchido
 #
-# SELETORES CSS USADOS:
+# SELETORES CSS USADOS (baseados em STJ/index.js):
 # - input[name="livre"] - Campo de pesquisa livre
-# - select[name="tribunal"] - Dropdown de seleção de tribunal
+# - select[name="b"] - Dropdown de seleção de tribunal (STJ ou TFR)
+# - input[type="submit"] - Botão de submissão do formulário
 # ═══════════════════════════════════════════════════════════════════════
 
 mutation TestSTJFormFill {
@@ -40,9 +41,9 @@ mutation TestSTJFormFill {
   type(selector: "input[name='livre']", text: "Advogado") {
     success
   }
-  
-  # Selecionar tribunal "STJ"
-  select(selector: "select[name='tribunal']", value: "STJ") {
+
+  # Selecionar tribunal "STJ" (seletor correto: name="b")
+  select(selector: "select[name='b']", value: "STJ") {
     success
   }
   

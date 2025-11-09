@@ -3,8 +3,9 @@
   "_note": "STJ usa estrutura de divs com classes .documento, .docTitulo, .docDados, .docTexto",
 
   "form_fields": {
-    "_description": "Mapeamento de campos amigáveis (busca.json) para nomes técnicos dos campos do formulário",
-    "Tribunal": "tribunal",
+    "_description": "Mapeamento de campos amigáveis (busca.json) para nomes técnicos dos campos do formulário HTML",
+    "_note": "IMPORTANTE: O seletor do tribunal é 'b' (não 'tribunal'). Baseado na análise do código STJ/index.js linha 929",
+    "Tribunal": "b",
     "Pesquisa livre": "livre",
     "Número do processo": "processo",
     "Classe processual": "classe",

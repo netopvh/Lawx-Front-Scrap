@@ -46,9 +46,9 @@ mutation TestSTJScraping {
   type(selector: "input[name='livre']", text: "Advogado") {
     success
   }
-  
-  # Selecionar tribunal "STJ"
-  select(selector: "select[name='tribunal']", value: "STJ") {
+
+  # Selecionar tribunal "STJ" (seletor correto: name="b")
+  select(selector: "select[name='b']", value: "STJ") {
     success
   }
   

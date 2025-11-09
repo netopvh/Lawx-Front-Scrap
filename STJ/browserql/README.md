@@ -57,6 +57,7 @@ Clique no botão **</>** para exportar a query como código em:
 | Arquivo | Descrição |
 |---------|-----------|
 | `test-connection.bql` | Teste básico de conexão |
+| `test-all-form-fields.bql` | **⭐ Testar TODOS os campos do formulário (RECOMENDADO)** |
 | `test-stj-form-fill.bql` | Preencher formulário de pesquisa STJ |
 | `test-stj-scraping.bql` | Extrair dados de jurisprudências STJ |
 | `test-tfr-form-fill.bql` | Preencher formulário de pesquisa TFR |

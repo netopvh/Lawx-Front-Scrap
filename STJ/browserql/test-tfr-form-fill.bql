@@ -16,9 +16,10 @@
 # - Tribunal "TFR" selecionado
 # - Screenshot mostrando o formulário preenchido
 #
-# SELETORES CSS USADOS:
+# SELETORES CSS USADOS (baseados em STJ/index.js):
 # - input[name="livre"] - Campo de pesquisa livre
-# - select[name="tribunal"] - Dropdown de seleção de tribunal
+# - select[name="b"] - Dropdown de seleção de tribunal (STJ ou TFR)
+# - input[type="submit"] - Botão de submissão do formulário
 #
 # NOTA:
 # O TFR (Tribunal Federal de Recursos) foi extinto em 1989 e suas competências
@@ -45,9 +46,9 @@ mutation TestTFRFormFill {
   type(selector: "input[name='livre']", text: "Advogado") {
     success
   }
-  
-  # Selecionar tribunal "TFR"
-  select(selector: "select[name='tribunal']", value: "TFR") {
+
+  # Selecionar tribunal "TFR" (seletor correto: name="b")
+  select(selector: "select[name='b']", value: "TFR") {
     success
   }
   
@@ -68,9 +69,9 @@ mutation TestTFRFormFill {
     value
   }
   
-  # Verificar se a opção TFR existe no dropdown
+  # Verificar se a opção TFR existe no dropdown (seletor correto: name="b")
   tfrOptionExists: evaluate(
-    expression: "Array.from(document.querySelectorAll('select[name=\"tribunal\"] option')).some(opt => opt.value === 'TFR')"
+    expression: "Array.from(document.querySelectorAll('select[name=\"b\"] option')).some(opt => opt.value === 'TFR')"
   ) {
     value
   }
