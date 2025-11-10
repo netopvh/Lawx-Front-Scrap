@@ -34,12 +34,12 @@ mutation STJCloudflareBypass {
   # ═══════════════════════════════════════════════════════════════════════
 
   # Ativar proxy residencial do Brasil (obrigatório para Cloudflare)
-  proxy(url: "*", country: BR) {
+  step1_proxy: proxy(url: "*", country: BR) {
     time
   }
 
   # Navegar para página do STJ
-  goto(url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", waitUntil: domContentLoaded) {
+  step2_goto: goto(url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", waitUntil: domContentLoaded) {
     status
   }
 
@@ -48,7 +48,7 @@ mutation STJCloudflareBypass {
   # ═══════════════════════════════════════════════════════════════════════
 
   # Aguardar 1 segundo para detectar se há página de challenge do Cloudflare
-  waitForCloudflareChallenge: waitForSelector(
+  step3_waitForCloudflareChallenge: waitForSelector(
     selector: "a[href*='cloudflare.com']",
     timeout: 1000
   ) {
@@ -56,17 +56,17 @@ mutation STJCloudflareBypass {
   }
 
   # Se página de challenge do Cloudflare for detectada, resolver
-  ifCloudflareChallenge: if(selector: "a[href*='cloudflare.com']") {
+  step4_ifCloudflareChallenge: if(selector: "a[href*='cloudflare.com']") {
 
     # Resolver Cloudflare Challenge
-    verifyChallenge: verify(type: cloudflare, timeout: 30000) {
+    step4a_verifyChallenge: verify(type: cloudflare, timeout: 30000) {
       found
       solved
       time
     }
 
     # Aguardar navegação após resolução
-    waitAfterChallenge: waitForNavigation(waitUntil: networkIdle, timeout: 30000) {
+    step4b_waitAfterChallenge: waitForNavigation(waitUntil: networkIdle, timeout: 30000) {
       status
       time
     }
@@ -77,7 +77,7 @@ mutation STJCloudflareBypass {
   # ═══════════════════════════════════════════════════════════════════════
 
   # Aguardar 1 segundo para detectar se há Turnstile
-  waitForTurnstile: waitForSelector(
+  step5_waitForTurnstile: waitForSelector(
     selector: ".cf-turnstile, iframe[src*='challenges.cloudflare.com']",
     timeout: 1000
   ) {
@@ -85,17 +85,17 @@ mutation STJCloudflareBypass {
   }
 
   # Se Turnstile for detectado, resolver
-  ifTurnstile: if(selector: ".cf-turnstile, iframe[src*='challenges.cloudflare.com']") {
+  step6_ifTurnstile: if(selector: ".cf-turnstile, iframe[src*='challenges.cloudflare.com']") {
 
     # Resolver Cloudflare Turnstile
-    verifyTurnstile: verify(type: cloudflare, timeout: 30000) {
+    step6a_verifyTurnstile: verify(type: cloudflare, timeout: 30000) {
       found
       solved
       time
     }
 
     # Aguardar 2 segundos após resolução
-    waitAfterTurnstile: waitForTimeout(time: 2000) {
+    step6b_waitAfterTurnstile: waitForTimeout(time: 2000) {
       time
     }
   }
@@ -105,7 +105,7 @@ mutation STJCloudflareBypass {
   # ═══════════════════════════════════════════════════════════════════════
 
   # Aguardar 1 segundo para detectar reCAPTCHA
-  waitForRecaptcha: waitForSelector(
+  step7_waitForRecaptcha: waitForSelector(
     selector: ".g-recaptcha, iframe[src*='recaptcha']",
     timeout: 1000
   ) {
@@ -113,10 +113,10 @@ mutation STJCloudflareBypass {
   }
 
   # Se reCAPTCHA for detectado, resolver
-  ifRecaptcha: if(selector: ".g-recaptcha, iframe[src*='recaptcha']") {
+  step8_ifRecaptcha: if(selector: ".g-recaptcha, iframe[src*='recaptcha']") {
 
     # Resolver reCAPTCHA (auto-detecta v2/v3)
-    solveRecaptcha: solve(timeout: 60000) {
+    step8a_solveRecaptcha: solve(timeout: 60000) {
       found
       solved
       time
@@ -128,7 +128,7 @@ mutation STJCloudflareBypass {
   # ═══════════════════════════════════════════════════════════════════════
 
   # Aguardar formulário aparecer (timeout maior para dar tempo do Cloudflare processar)
-  waitForForm: waitForSelector(
+  step9_waitForForm: waitForSelector(
     selector: "input[name='livre']",
     timeout: 10000
   ) {
@@ -136,7 +136,7 @@ mutation STJCloudflareBypass {
   }
 
   # Validar que todos os campos do formulário existem
-  formValidation: evaluate(
+  step10_formValidation: evaluate(
     content: "const selectors = { tribunal: document.querySelector('select[name=\"b\"]') !== null, livre: document.querySelector('input[name=\"livre\"]') !== null, processo: document.querySelector('input[name=\"processo\"]') !== null, submitButton: document.querySelector('input[type=\"submit\"], button[type=\"submit\"]') !== null }; const missing = Object.entries(selectors).filter(([key, exists]) => !exists).map(([key]) => key); return { formLoaded: missing.length === 0, found: Object.values(selectors).filter(v => v).length, total: Object.keys(selectors).length, missing: missing.join(', ') || 'none', pageTitle: document.title, currentUrl: window.location.href };"
   ) {
     value
@@ -147,17 +147,17 @@ mutation STJCloudflareBypass {
   # ═══════════════════════════════════════════════════════════════════════
 
   # Título da página (deve ser diferente de "Just a moment...")
-  pageTitle: title {
+  step11_pageTitle: title {
     title
   }
 
   # Screenshot da página final
-  screenshot(fullPage: true) {
+  step12_screenshot: screenshot(fullPage: true) {
     base64
   }
 
   # HTML do formulário (se carregou)
-  formHtml: html(selector: "form", clean: {
+  step13_formHtml: html(selector: "form", clean: {
     removeAttributes: false,
     removeNonTextNodes: false
   }) {

@@ -28,56 +28,56 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 mutation TestTFRFormFill {
-  
+
   # Navegar para página de pesquisa do STJ/TFR
-  goto(
-    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", 
+  step1_goto: goto(
+    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp",
     waitUntil: networkIdle
   ) {
     status
   }
-  
+
   # Aguardar carregamento do formulário
-  waitForSelector(selector: "input[name='livre']", timeout: 10000) {
+  step2_waitForSelector: waitForSelector(selector: "input[name='livre']", timeout: 10000) {
     success
   }
-  
+
   # Preencher campo "Pesquisa livre"
-  type(selector: "input[name='livre']", text: "Advogado") {
+  step3_type: type(selector: "input[name='livre']", text: "Advogado") {
     success
   }
 
   # Selecionar tribunal "TFR" (seletor correto: name="b")
-  select(selector: "select[name='b']", value: "TFR") {
+  step4_select: select(selector: "select[name='b']", value: "TFR") {
     success
   }
-  
+
   # Aguardar 2 segundos para visualizar
-  wait(duration: 2000) {
-    success
+  step5_wait: waitForTimeout(time: 2000) {
+    time
   }
-  
+
   # Capturar screenshot do formulário preenchido
-  screenshot(fullPage: true) {
+  step6_screenshot: screenshot(fullPage: true) {
     base64
   }
-  
+
   # Verificar se o CAPTCHA está presente
-  captchaDetected: evaluate(
+  step7_captchaDetected: evaluate(
     content: "return document.querySelector('.g-recaptcha') !== null;"
   ) {
     value
   }
 
   # Verificar se a opção TFR existe no dropdown (seletor correto: name="b")
-  tfrOptionExists: evaluate(
+  step8_tfrOptionExists: evaluate(
     content: "return Array.from(document.querySelectorAll('select[name=\"b\"] option')).some(opt => opt.value === 'TFR');"
   ) {
     value
   }
-  
+
   # Exportar HTML do formulário
-  formHtml: html(selector: "form", clean: {
+  step9_formHtml: html(selector: "form", clean: {
     removeAttributes: false,
     removeNonTextNodes: false
   }) {

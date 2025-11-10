@@ -23,49 +23,49 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 mutation TestSTJFormFill {
-  
+
   # Navegar para página de pesquisa do STJ
-  goto(
-    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", 
+  step1_goto: goto(
+    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp",
     waitUntil: networkIdle
   ) {
     status
   }
-  
+
   # Aguardar carregamento do formulário
-  waitForSelector(selector: "input[name='livre']", timeout: 10000) {
+  step2_waitForSelector: waitForSelector(selector: "input[name='livre']", timeout: 10000) {
     success
   }
-  
+
   # Preencher campo "Pesquisa livre"
-  type(selector: "input[name='livre']", text: "Advogado") {
+  step3_type: type(selector: "input[name='livre']", text: "Advogado") {
     success
   }
 
   # Selecionar tribunal "STJ" (seletor correto: name="b")
-  select(selector: "select[name='b']", value: "STJ") {
+  step4_select: select(selector: "select[name='b']", value: "STJ") {
     success
   }
-  
+
   # Aguardar 2 segundos para visualizar
-  wait(duration: 2000) {
-    success
+  step5_wait: waitForTimeout(time: 2000) {
+    time
   }
-  
+
   # Capturar screenshot do formulário preenchido
-  screenshot(fullPage: true) {
+  step6_screenshot: screenshot(fullPage: true) {
     base64
   }
-  
+
   # Verificar se o CAPTCHA está presente
-  captchaDetected: evaluate(
-    expression: "document.querySelector('.g-recaptcha') !== null"
+  step7_captchaDetected: evaluate(
+    content: "return document.querySelector('.g-recaptcha') !== null;"
   ) {
     value
   }
-  
+
   # Exportar HTML do formulário
-  formHtml: html(selector: "form", clean: {
+  step8_formHtml: html(selector: "form", clean: {
     removeAttributes: false,
     removeNonTextNodes: false
   }) {

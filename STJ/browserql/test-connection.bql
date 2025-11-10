@@ -18,24 +18,24 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 mutation TestConnection {
-  
+
   # Navegar para página de teste
-  goto(url: "https://example.com", waitUntil: networkIdle) {
+  step1_goto: goto(url: "https://example.com", waitUntil: networkIdle) {
     status
   }
-  
+
   # Obter título da página
-  title {
+  step2_title: title {
     title
   }
-  
+
   # Capturar screenshot
-  screenshot(fullPage: true) {
+  step3_screenshot: screenshot(fullPage: true) {
     base64
   }
-  
+
   # Exportar HTML limpo
-  html(clean: {
+  step4_html: html(clean: {
     removeAttributes: true,
     removeNonTextNodes: true
   }) {

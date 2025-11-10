@@ -28,65 +28,65 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 mutation TestSTJScraping {
-  
+
   # Navegar para página de pesquisa do STJ
-  goto(
-    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", 
+  step1_goto: goto(
+    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp",
     waitUntil: networkIdle
   ) {
     status
   }
-  
+
   # Aguardar carregamento do formulário
-  waitForSelector(selector: "input[name='livre']", timeout: 10000) {
+  step2_waitForSelector: waitForSelector(selector: "input[name='livre']", timeout: 10000) {
     success
   }
-  
+
   # Preencher campo "Pesquisa livre"
-  type(selector: "input[name='livre']", text: "Advogado") {
+  step3_type: type(selector: "input[name='livre']", text: "Advogado") {
     success
   }
 
   # Selecionar tribunal "STJ" (seletor correto: name="b")
-  select(selector: "select[name='b']", value: "STJ") {
+  step4_select: select(selector: "select[name='b']", value: "STJ") {
     success
   }
-  
+
   # Submeter formulário
-  click(selector: "input[type='submit'], button[type='submit']") {
+  step5_click: click(selector: "input[type='submit'], button[type='submit']") {
     success
   }
-  
+
   # Aguardar resultados (ou CAPTCHA)
-  waitForNavigation(waitUntil: networkIdle, timeout: 30000) {
+  step6_waitForNavigation: waitForNavigation(waitUntil: networkIdle, timeout: 30000) {
     success
   }
-  
+
   # Verificar se há CAPTCHA
-  captchaPresent: evaluate(
-    expression: "document.querySelector('.g-recaptcha, iframe[src*=\"recaptcha\"]') !== null"
+  step7_captchaPresent: evaluate(
+    content: "return document.querySelector('.g-recaptcha, iframe[src*=\"recaptcha\"]') !== null;"
   ) {
     value
   }
-  
+
   # Extrair jurisprudências (se não houver CAPTCHA)
-  jurisprudencias: mapSelector(selector: ".jurisprudenciaResultado, .docEntryData") {
-    
+  step8_jurisprudencias: mapSelector(selector: ".jurisprudenciaResultado, .docEntryData") {
+
     # Número do processo
     numeroProcesso: mapSelector(selector: ".numeroProcesso, h4:nth-of-type(1)") {
       texto: innerText
     }
-    
+
     # Data de publicação
     dataPublicacao: mapSelector(selector: ".dataPublicacao, .data") {
       texto: innerText
     }
-    
+
     # Ementa
     ementa: mapSelector(selector: ".ementa, .docEntryData p") {
       texto: innerText
     }
-    
+
     # Link para detalhes
     link: mapSelector(selector: "a") {
       href: attribute(name: "href") {
@@ -94,23 +94,23 @@ mutation TestSTJScraping {
       }
     }
   }
-  
+
   # Capturar screenshot da página de resultados
-  screenshot(fullPage: true) {
+  step9_screenshot: screenshot(fullPage: true) {
     base64
   }
-  
+
   # Exportar HTML limpo dos resultados
-  resultsHtml: html(clean: {
+  step10_resultsHtml: html(clean: {
     removeAttributes: true,
     removeNonTextNodes: true
   }) {
     html
   }
-  
+
   # Contar número de resultados
-  resultCount: evaluate(
-    expression: "document.querySelectorAll('.jurisprudenciaResultado, .docEntryData').length"
+  step11_resultCount: evaluate(
+    content: "return document.querySelectorAll('.jurisprudenciaResultado, .docEntryData').length;"
   ) {
     value
   }
