@@ -137,27 +137,7 @@ mutation STJCloudflareBypass {
 
   # Validar que todos os campos do formulário existem
   formValidation: evaluate(
-    expression: `
-      const selectors = {
-        tribunal: document.querySelector('select[name="b"]') !== null,
-        livre: document.querySelector('input[name="livre"]') !== null,
-        processo: document.querySelector('input[name="processo"]') !== null,
-        submitButton: document.querySelector('input[type="submit"], button[type="submit"]') !== null
-      };
-
-      const missing = Object.entries(selectors)
-        .filter(([key, exists]) => !exists)
-        .map(([key]) => key);
-
-      return {
-        formLoaded: missing.length === 0,
-        found: Object.values(selectors).filter(v => v).length,
-        total: Object.keys(selectors).length,
-        missing: missing.join(', ') || 'none',
-        pageTitle: document.title,
-        currentUrl: window.location.href
-      };
-    `
+    content: "const selectors = { tribunal: document.querySelector('select[name=\"b\"]') !== null, livre: document.querySelector('input[name=\"livre\"]') !== null, processo: document.querySelector('input[name=\"processo\"]') !== null, submitButton: document.querySelector('input[type=\"submit\"], button[type=\"submit\"]') !== null }; const missing = Object.entries(selectors).filter(([key, exists]) => !exists).map(([key]) => key); return { formLoaded: missing.length === 0, found: Object.values(selectors).filter(v => v).length, total: Object.keys(selectors).length, missing: missing.join(', ') || 'none', pageTitle: document.title, currentUrl: window.location.href };"
   ) {
     value
   }

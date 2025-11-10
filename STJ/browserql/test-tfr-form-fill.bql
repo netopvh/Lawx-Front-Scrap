@@ -64,14 +64,14 @@ mutation TestTFRFormFill {
   
   # Verificar se o CAPTCHA está presente
   captchaDetected: evaluate(
-    expression: "document.querySelector('.g-recaptcha') !== null"
+    content: "return document.querySelector('.g-recaptcha') !== null;"
   ) {
     value
   }
-  
+
   # Verificar se a opção TFR existe no dropdown (seletor correto: name="b")
   tfrOptionExists: evaluate(
-    expression: "Array.from(document.querySelectorAll('select[name=\"b\"] option')).some(opt => opt.value === 'TFR')"
+    content: "return Array.from(document.querySelectorAll('select[name=\"b\"] option')).some(opt => opt.value === 'TFR');"
   ) {
     value
   }
