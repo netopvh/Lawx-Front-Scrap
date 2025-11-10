@@ -1,110 +1,186 @@
 # ═══════════════════════════════════════════════════════════════════════
-# TEST: Detecção de CAPTCHA
+# TEST: Detecção e Resolução de CAPTCHA/Cloudflare
 # ═══════════════════════════════════════════════════════════════════════
 #
 # OBJETIVO:
-# Detectar a presença de CAPTCHA (reCAPTCHA v2) na página do STJ.
+# Detectar e resolver Cloudflare Turnstile/Challenge na página do STJ.
 #
 # COMO USAR:
 # 1. Acesse: https://www.browserless.io/playground
-# 2. Configure sua API Key no botão ¦¦¦ (Settings)
-# 3. Cole esta query no editor
-# 4. Clique em ▶️ Run
+# 2. Configure sua API Key no botão ⚙️ Settings
+# 3. IMPORTANTE: Ative "Residential Proxy" nas configurações (obrigatório para Cloudflare)
+# 4. Cole esta query no editor
+# 5. Clique em ▶️ Run
 #
 # RESULTADO ESPERADO:
-# - Detecção de reCAPTCHA v2
-# - Screenshot mostrando o CAPTCHA (se presente)
-# - Informações sobre o tipo de CAPTCHA
+# - Cloudflare Turnstile detectado e resolvido
+# - Formulário STJ carregado após bypass
+# - Screenshot mostrando página final
 #
-# TIPOS DE CAPTCHA DETECTADOS:
-# - reCAPTCHA v2 (checkbox)
-# - reCAPTCHA v3 (invisible)
-# - hCaptcha
-# - Outros
+# DOCUMENTAÇÃO:
+# https://docs.browserless.io/browserql/bot-detection/solving-captchas
+#
+# TIPOS DE PROTEÇÃO DETECTADOS:
+# - Cloudflare Turnstile (.cf-turnstile)
+# - Cloudflare Challenge Page (a[href*="cloudflare.com"])
+# - reCAPTCHA v2/v3 (fallback)
+# - hCaptcha (fallback)
 # ═══════════════════════════════════════════════════════════════════════
 
-mutation TestCaptchaDetection {
-  
-  # Navegar para página de pesquisa do STJ
-  goto(
-    url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", 
-    waitUntil: networkIdle
-  ) {
+mutation STJCloudflareBypass {
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # ETAPA 1: Navegar para STJ com Proxy Residencial (OBRIGATÓRIO)
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Ativar proxy residencial do Brasil (obrigatório para Cloudflare)
+  proxy(url: "*", country: BR) {
+    time
+  }
+
+  # Navegar para página do STJ
+  goto(url: "https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp", waitUntil: domContentLoaded) {
     status
   }
-  
-  # Aguardar carregamento completo
-  wait(duration: 3000) {
-    success
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # ETAPA 2: Detectar e Resolver Cloudflare Challenge Page
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Aguardar 1 segundo para detectar se há página de challenge do Cloudflare
+  waitForCloudflareChallenge: waitForSelector(
+    selector: "a[href*='cloudflare.com']",
+    timeout: 1000
+  ) {
+    time
   }
-  
-  # Detectar reCAPTCHA v2 (checkbox)
-  recaptchaV2: evaluate(
-    expression: "document.querySelector('.g-recaptcha') !== null"
+
+  # Se página de challenge do Cloudflare for detectada, resolver
+  ifCloudflareChallenge: if(selector: "a[href*='cloudflare.com']") {
+
+    # Resolver Cloudflare Challenge
+    verifyChallenge: verify(type: cloudflare, timeout: 30000) {
+      found
+      solved
+      time
+    }
+
+    # Aguardar navegação após resolução
+    waitAfterChallenge: waitForNavigation(waitUntil: networkIdle, timeout: 30000) {
+      status
+      time
+    }
+  }
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # ETAPA 3: Detectar e Resolver Cloudflare Turnstile
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Aguardar 1 segundo para detectar se há Turnstile
+  waitForTurnstile: waitForSelector(
+    selector: ".cf-turnstile, iframe[src*='challenges.cloudflare.com']",
+    timeout: 1000
+  ) {
+    time
+  }
+
+  # Se Turnstile for detectado, resolver
+  ifTurnstile: if(selector: ".cf-turnstile, iframe[src*='challenges.cloudflare.com']") {
+
+    # Resolver Cloudflare Turnstile
+    verifyTurnstile: verify(type: cloudflare, timeout: 30000) {
+      found
+      solved
+      time
+    }
+
+    # Aguardar 2 segundos após resolução
+    waitAfterTurnstile: waitForTimeout(time: 2000) {
+      time
+    }
+  }
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # ETAPA 4: Fallback - Resolver reCAPTCHA/hCaptcha (se presente)
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Aguardar 1 segundo para detectar reCAPTCHA
+  waitForRecaptcha: waitForSelector(
+    selector: ".g-recaptcha, iframe[src*='recaptcha']",
+    timeout: 1000
+  ) {
+    time
+  }
+
+  # Se reCAPTCHA for detectado, resolver
+  ifRecaptcha: if(selector: ".g-recaptcha, iframe[src*='recaptcha']") {
+
+    # Resolver reCAPTCHA (auto-detecta v2/v3)
+    solveRecaptcha: solve(timeout: 60000) {
+      found
+      solved
+      time
+    }
+  }
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # ETAPA 5: Validar que Formulário STJ Carregou
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Aguardar formulário aparecer (timeout maior para dar tempo do Cloudflare processar)
+  waitForForm: waitForSelector(
+    selector: "input[name='livre']",
+    timeout: 10000
+  ) {
+    time
+  }
+
+  # Validar que todos os campos do formulário existem
+  formValidation: evaluate(
+    expression: `
+      const selectors = {
+        tribunal: document.querySelector('select[name="b"]') !== null,
+        livre: document.querySelector('input[name="livre"]') !== null,
+        processo: document.querySelector('input[name="processo"]') !== null,
+        submitButton: document.querySelector('input[type="submit"], button[type="submit"]') !== null
+      };
+
+      const missing = Object.entries(selectors)
+        .filter(([key, exists]) => !exists)
+        .map(([key]) => key);
+
+      return {
+        formLoaded: missing.length === 0,
+        found: Object.values(selectors).filter(v => v).length,
+        total: Object.keys(selectors).length,
+        missing: missing.join(', ') || 'none',
+        pageTitle: document.title,
+        currentUrl: window.location.href
+      };
+    `
   ) {
     value
   }
-  
-  # Detectar reCAPTCHA v3 (invisible)
-  recaptchaV3: evaluate(
-    expression: "document.querySelector('script[src*=\"recaptcha/api.js\"]') !== null"
-  ) {
-    value
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # ETAPA 6: Capturar Evidências
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Título da página (deve ser diferente de "Just a moment...")
+  pageTitle: title {
+    title
   }
-  
-  # Detectar iframe do reCAPTCHA
-  recaptchaIframe: evaluate(
-    expression: "document.querySelector('iframe[src*=\"recaptcha\"]') !== null"
-  ) {
-    value
-  }
-  
-  # Detectar hCaptcha
-  hcaptcha: evaluate(
-    expression: "document.querySelector('.h-captcha') !== null"
-  ) {
-    value
-  }
-  
-  # Obter site key do reCAPTCHA (se presente)
-  recaptchaSiteKey: evaluate(
-    expression: "document.querySelector('.g-recaptcha')?.getAttribute('data-sitekey') || 'N/A'"
-  ) {
-    value
-  }
-  
-  # Contar iframes na página
-  iframeCount: evaluate(
-    expression: "document.querySelectorAll('iframe').length"
-  ) {
-    value
-  }
-  
-  # Listar URLs dos iframes
-  iframeUrls: evaluate(
-    expression: "Array.from(document.querySelectorAll('iframe')).map(iframe => iframe.src).join(', ')"
-  ) {
-    value
-  }
-  
-  # Verificar se há scripts do Google reCAPTCHA
-  recaptchaScripts: evaluate(
-    expression: "Array.from(document.querySelectorAll('script')).filter(s => s.src.includes('recaptcha')).map(s => s.src).join(', ')"
-  ) {
-    value
-  }
-  
-  # Capturar screenshot
+
+  # Screenshot da página final
   screenshot(fullPage: true) {
     base64
   }
-  
-  # Exportar HTML do CAPTCHA (se presente)
-  captchaHtml: html(selector: ".g-recaptcha, .h-captcha, iframe[src*='recaptcha']", clean: {
+
+  # HTML do formulário (se carregou)
+  formHtml: html(selector: "form", clean: {
     removeAttributes: false,
     removeNonTextNodes: false
   }) {
     html
   }
 }
-

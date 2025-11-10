@@ -57,12 +57,13 @@ Clique no botão **</>** para exportar a query como código em:
 | Arquivo | Descrição |
 |---------|-----------|
 | `test-connection.bql` | Teste básico de conexão |
-| `test-all-form-fields.bql` | **⭐ Testar TODOS os campos do formulário (RECOMENDADO)** |
+| `test-captcha-detection.bql` | **🛡️ Resolver Cloudflare Turnstile/Challenge (COMECE AQUI!)** |
+| `test-all-form-fields.bql` | **⭐ Testar TODOS os campos do formulário** |
 | `test-stj-form-fill.bql` | Preencher formulário de pesquisa STJ |
 | `test-stj-scraping.bql` | Extrair dados de jurisprudências STJ |
 | `test-tfr-form-fill.bql` | Preencher formulário de pesquisa TFR |
-| `test-captcha-detection.bql` | Detectar presença de CAPTCHA |
 | `test-pagination.bql` | Testar navegação entre páginas |
+| `GUIA-CLOUDFLARE-BYPASS.md` | **📚 Guia completo de bypass do Cloudflare** |
 
 ---
 
