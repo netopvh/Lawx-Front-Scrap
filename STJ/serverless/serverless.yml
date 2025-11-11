@@ -1,0 +1,124 @@
+# Serverless Framework Configuration
+# Deploy: serverless deploy
+# Remove: serverless remove
+# Logs: serverless logs -f scraper --tail
+
+service: stj-scraper
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  timeout: 120 # 2 minutos (máximo para scraping)
+  memorySize: 512 # MB
+  
+  # Variáveis de ambiente
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    BROWSERLESS_API_KEY: ${env:BROWSERLESS_API_KEY}
+    # Descomente conforme necessário:
+    # S3_BUCKET: ${env:S3_BUCKET}
+    # DYNAMODB_TABLE: ${env:DYNAMODB_TABLE}
+    # SQS_QUEUE_URL: ${env:SQS_QUEUE_URL}
+  
+  # Permissões IAM (descomente conforme necessário)
+  iam:
+    role:
+      statements:
+        # Permissão para S3
+        # - Effect: Allow
+        #   Action:
+        #     - s3:PutObject
+        #     - s3:GetObject
+        #   Resource: "arn:aws:s3:::${env:S3_BUCKET}/*"
+        
+        # Permissão para DynamoDB
+        # - Effect: Allow
+        #   Action:
+        #     - dynamodb:PutItem
+        #     - dynamodb:GetItem
+        #     - dynamodb:Query
+        #   Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${env:DYNAMODB_TABLE}"
+        
+        # Permissão para SQS
+        # - Effect: Allow
+        #   Action:
+        #     - sqs:SendMessage
+        #   Resource: "arn:aws:sqs:${self:provider.region}:*:${env:SQS_QUEUE_NAME}"
+
+functions:
+  scraper:
+    handler: handler.handler
+    description: Scraper de jurisprudências STJ/TFR
+    events:
+      # API Gateway REST
+      - http:
+          path: scrape
+          method: post
+          cors: true
+    
+    # Configurações específicas da função
+    timeout: 120
+    memorySize: 512
+    
+    # Variáveis de ambiente específicas da função
+    environment:
+      FUNCTION_NAME: stj-scraper
+
+# Plugins
+plugins:
+  - serverless-offline
+
+# Recursos adicionais (descomente conforme necessário)
+# resources:
+#   Resources:
+#     # Bucket S3 para armazenar resultados
+#     ScrapingBucket:
+#       Type: AWS::S3::Bucket
+#       Properties:
+#         BucketName: ${env:S3_BUCKET}
+#         VersioningConfiguration:
+#           Status: Enabled
+#     
+#     # Tabela DynamoDB para armazenar metadados
+#     ScrapingTable:
+#       Type: AWS::DynamoDB::Table
+#       Properties:
+#         TableName: ${env:DYNAMODB_TABLE}
+#         BillingMode: PAY_PER_REQUEST
+#         AttributeDefinitions:
+#           - AttributeName: id
+#             AttributeType: S
+#           - AttributeName: timestamp
+#             AttributeType: S
+#         KeySchema:
+#           - AttributeName: id
+#             KeyType: HASH
+#           - AttributeName: timestamp
+#             KeyType: RANGE
+#     
+#     # Fila SQS para processamento assíncrono
+#     ScrapingQueue:
+#       Type: AWS::SQS::Queue
+#       Properties:
+#         QueueName: ${env:SQS_QUEUE_NAME}
+#         VisibilityTimeout: 180
+#         MessageRetentionPeriod: 1209600 # 14 dias
+
+# Configurações de empacotamento
+package:
+  individually: false
+  patterns:
+    - '!node_modules/**'
+    - '!.git/**'
+    - '!.env*'
+    - '!*.md'
+    - '!test-*.js'
+    - 'handler.js'
+    - 'lib/**'
+    - 'node_modules/axios/**'
+    - 'node_modules/jsdom/**'
+

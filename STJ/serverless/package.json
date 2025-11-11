@@ -1,0 +1,37 @@
+{
+  "name": "stj-serverless-scraper",
+  "version": "1.0.0",
+  "description": "Serverless scraper para jurisprudências STJ/TFR usando Browserless BQL",
+  "type": "module",
+  "main": "handler.js",
+  "scripts": {
+    "test": "node test-local.js",
+    "deploy:aws": "serverless deploy --aws-profile default",
+    "deploy:azure": "func azure functionapp publish stj-scraper",
+    "logs:aws": "serverless logs -f scraper --tail",
+    "remove:aws": "serverless remove"
+  },
+  "keywords": [
+    "serverless",
+    "scraping",
+    "stj",
+    "tfr",
+    "browserless",
+    "lambda",
+    "azure-functions"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "jsdom": "^25.0.1"
+  },
+  "devDependencies": {
+    "serverless": "^4.4.7",
+    "serverless-offline": "^14.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
