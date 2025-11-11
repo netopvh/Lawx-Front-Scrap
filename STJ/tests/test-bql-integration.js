@@ -10,14 +10,26 @@
  */
 
 import dotenv from 'dotenv';
-import { BrowserlessBQL, STJ_SEARCH_QUERY, TFR_SEARCH_QUERY } from '../lib/browserless-bql.js';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-dotenv.config({ path: 'STJ/.env' });
+// Obter __dirname em ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-const SCREENSHOT_DIR = 'screenshots';
-const HTML_DIR = 'scraps';
+// Importar do diretório pai (STJ/)
+import { BrowserlessBQL, STJ_SEARCH_QUERY, TFR_SEARCH_QUERY } from '../lib/browserless-bql.js';
+
+// Carregar .env do diretório STJ (pai)
+const envPath = path.join(__dirname, '..', '.env');
+dotenv.config({ path: envPath });
+
+// Diretórios relativos ao diretório STJ (pai)
+const STJ_DIR = path.join(__dirname, '..');
+const SCREENSHOT_DIR = path.join(STJ_DIR, 'screenshots');
+const HTML_DIR = path.join(STJ_DIR, 'scraps');
 
 // Criar diretórios se não existirem
 if (!fs.existsSync(SCREENSHOT_DIR)) {

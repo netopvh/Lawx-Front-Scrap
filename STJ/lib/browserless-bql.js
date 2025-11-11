@@ -20,6 +20,7 @@ export class BrowserlessBQL {
     this.token = config.token || process.env.BROWSERLESS_API_KEY;
     this.proxyString = config.proxyString || "&proxy=residential&proxySticky=true&proxyCountry=br";
     this.optionsString = config.optionsString || "&humanlike=true&blockAds=true&blockConsentModals=true";
+    this.timeout = config.timeout || "&timeout=120"; // 120 segundos (2 minutos)
   }
 
   /**
@@ -42,10 +43,19 @@ export class BrowserlessBQL {
       })
     };
 
-    const url = `${this.endpoint}?token=${this.token}${this.proxyString}${this.optionsString}`;
+    const url = `${this.endpoint}?token=${this.token}${this.proxyString}${this.optionsString}${this.timeout}`;
 
     try {
       const response = await fetch(url, options);
+
+      // Verificar se a resposta é OK
+      if (!response.ok) {
+        const text = await response.text();
+        console.error(`HTTP Error ${response.status}: ${response.statusText}`);
+        console.error('Response:', text);
+        throw new Error(`HTTP ${response.status}: ${text.substring(0, 200)}`);
+      }
+
       const data = await response.json();
 
       if (data.errors) {
@@ -78,7 +88,7 @@ export class BrowserlessBQL {
  * Baseado em STJ/scripts/busca-stj.graphql
  */
 export const STJ_SEARCH_QUERY = `
-mutation STJSearch($searchTerm: String!, $dateStart: String, $dateEnd: String) {
+mutation STJSearch($searchTerm: String!, $dateStart: String!, $dateEnd: String!) {
   viewport(width: 1366, height: 768) {
     width
     height
@@ -92,20 +102,20 @@ mutation STJSearch($searchTerm: String!, $dateStart: String, $dateEnd: String) {
     status
   }
   
-  waitForTimeout(time: 5000) {
+  waitForTimeout(time: 2000) {
     time
   }
-  
-  verify(type: cloudflare, timeout: 10000) {
+
+  verify(type: cloudflare, timeout: 30000) {
     found
     solved
     time
   }
-  
-  waitForNavigation(waitUntil: domContentLoaded, timeout: 20000) {
+
+  waitForNavigation(waitUntil: domContentLoaded, timeout: 15000) {
     status
   }
-  
+
   esperaCampoBusca: waitForSelector(
     selector: "input#pesquisaLivre"
     visible: true
@@ -114,7 +124,7 @@ mutation STJSearch($searchTerm: String!, $dateStart: String, $dateEnd: String) {
     selector
     time
   }
-  
+
   removeVLibra: evaluate(
     content: """
     try {
@@ -157,10 +167,10 @@ mutation STJSearch($searchTerm: String!, $dateStart: String, $dateEnd: String) {
     value
   }
   
-  esperarRemocaoVLibra: waitForTimeout(time: 5000) {
+  esperarRemocaoVLibra: waitForTimeout(time: 2000) {
     time
   }
-  
+
   clicaEmPesquisaAvancada: click(
     selector: "button#idMostrarPesquisaAvancada"
     visible: true
@@ -168,11 +178,31 @@ mutation STJSearch($searchTerm: String!, $dateStart: String, $dateEnd: String) {
     x
     y
   }
-  
-  esperaCarregarPesquisaAvancada: waitForTimeout(time: 5000) {
+
+  esperaCarregarPesquisaAvancada: waitForTimeout(time: 2000) {
     time
   }
-  
+
+  publicacaoDataInicio: type(
+    selector: "input#dtpb1"
+    text: $dateStart
+    visible: true
+  ) {
+    selector
+    text
+    time
+  }
+
+  publicacaoDataFinal: type(
+    selector: "input#dtpb2"
+    text: $dateEnd
+    visible: true
+  ) {
+    selector
+    text
+    time
+  }
+
   escreveEmPesquisaLivre: type(
     selector: "input#pesquisaLivre"
     text: $searchTerm
@@ -182,19 +212,19 @@ mutation STJSearch($searchTerm: String!, $dateStart: String, $dateEnd: String) {
     text
     time
   }
-  
-  esperaEscreverBusca: waitForTimeout(time: 5000) {
+
+  esperaEscreverBusca: waitForTimeout(time: 2000) {
     time
   }
-  
+
   buscar: click(selector: "button[aria-label='Pesquisar']") {
     x
     y
   }
-  
+
   esperaConcluirBusca: waitForNavigation(
     waitUntil: domContentLoaded
-    timeout: 10000
+    timeout: 15000
   ) {
     time
   }
@@ -228,20 +258,20 @@ mutation TFRSearch($searchTerm: String!) {
     status
   }
   
-  waitForTimeout(time: 5000) {
+  waitForTimeout(time: 2000) {
     time
   }
-  
-  verify(type: cloudflare, timeout: 10000) {
+
+  verify(type: cloudflare, timeout: 30000) {
     found
     solved
     time
   }
-  
-  waitForNavigation(waitUntil: domContentLoaded, timeout: 20000) {
+
+  waitForNavigation(waitUntil: domContentLoaded, timeout: 15000) {
     status
   }
-  
+
   esperaCampoBusca: waitForSelector(
     selector: "input#livre"
     visible: true
@@ -250,7 +280,7 @@ mutation TFRSearch($searchTerm: String!) {
     selector
     time
   }
-  
+
   removeVLibra: evaluate(
     content: """
     try {
@@ -293,10 +323,10 @@ mutation TFRSearch($searchTerm: String!) {
     value
   }
   
-  esperarRemocaoVLibra: waitForTimeout(time: 5000) {
+  esperarRemocaoVLibra: waitForTimeout(time: 2000) {
     time
   }
-  
+
   clicarEmAcordaosESumulas: click(
     selector: "label[for='b3']"
     visible: true
@@ -304,7 +334,7 @@ mutation TFRSearch($searchTerm: String!) {
     x
     y
   }
-  
+
   escreveEmPesquisaLivre: type(
     selector: "input#livre"
     text: $searchTerm
@@ -314,19 +344,19 @@ mutation TFRSearch($searchTerm: String!) {
     text
     time
   }
-  
-  esperaEscreverBusca: waitForTimeout(time: 5000) {
+
+  esperaEscreverBusca: waitForTimeout(time: 2000) {
     time
   }
-  
+
   buscar: click(selector: "input[type='submit'][value='Pesquisar']", timeout: 5000) {
     x
     y
   }
-  
+
   esperaConcluirBusca: waitForNavigation(
     waitUntil: domContentLoaded
-    timeout: 10000
+    timeout: 15000
   ) {
     time
   }

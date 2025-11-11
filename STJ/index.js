@@ -3,41 +3,36 @@
  * SCRAPER STJ/TFR - Superior Tribunal de Justiça / Tribunal Federal de Recursos
  * ═══════════════════════════════════════════════════════════════════════
  *
- * Extrai jurisprudências do site do STJ usando Scrapeless Cloud Browser.
+ * Extrai jurisprudências do site do STJ usando Browserless BQL.
  *
  * CARACTERÍSTICAS:
- * - Scrapeless Cloud Browser (escalabilidade)
+ * - Browserless BQL (BrowserQL GraphQL API)
  * - Suporte dual tribunal: STJ e TFR
- * - Cloudflare Turnstile (⚠️ BLOQUEIO ATIVO - NÃO RESOLVIDO)
- * - Puppeteer-core + WebSocket
+ * - Cloudflare Turnstile (✅ RESOLVIDO com verify(type: cloudflare))
+ * - Proxy residencial brasileiro
+ * - HTTP POST (sem WebSocket)
  * - Campo sigla_tribunal para identificação do tribunal de origem
  *
- * ⚠️ PROBLEMA CONHECIDO:
- * O site do STJ usa Cloudflare Turnstile que atualmente bloqueia o acesso
- * automatizado. O Scrapeless detecta mas não consegue resolver automaticamente.
- * 
- * SOLUÇÕES POSSÍVEIS:
- * 1. API oficial do STJ (se disponível)
- * 2. Scraping manual assistido (usuário resolve CAPTCHA)
- * 3. Serviço especializado (FlareSolverr, 2Captcha, Anti-Captcha)
- * 4. Análise dos screenshots fornecidos
+ * MELHORIAS vs VERSÃO ANTERIOR:
+ * - ✅ Cloudflare bypass automático
+ * - ✅ Proxy residencial BR (proxySticky)
+ * - ✅ Remoção automática do widget VLibras
+ * - ✅ Código mais simples e manutenível (~300 linhas vs ~1300)
+ * - ✅ Screenshots automáticos para debugging
  *
  * ═══════════════════════════════════════════════════════════════════════
  */
 
-import puppeteer from "puppeteer-core";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import OpenAI from "openai";
 import { Pinecone } from "@pinecone-database/pinecone";
-import { EventEmitter } from "events";
+import { BrowserlessBQL, STJ_SEARCH_QUERY, TFR_SEARCH_QUERY } from "./lib/browserless-bql.js";
+import { JSDOM } from "jsdom";
 
 // Carregar variáveis de ambiente
 dotenv.config();
-
-// EventEmitter para comunicação entre funções (CAPTCHA)
-const emitter = new EventEmitter();
 
 // Inicializar cliente OpenAI
 const openai = new OpenAI({
@@ -47,6 +42,11 @@ const openai = new OpenAI({
 // Inicializar cliente Pinecone
 const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
+});
+
+// Inicializar cliente Browserless BQL
+const bqlClient = new BrowserlessBQL({
+  token: process.env.BROWSERLESS_API_KEY,
 });
 
 // ═══════════════════════════════════════════════════════════════════════
