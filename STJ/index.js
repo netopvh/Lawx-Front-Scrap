@@ -58,6 +58,10 @@ const LOG_DIR = "logs";
 const SCREENSHOT_DIR = "screenshots";
 const SCRAP_DIR = "scraps";
 
+// Timeout do CAPTCHA (em milissegundos) - Padrão: 300000ms (5 minutos)
+// Com proxy datacenter BR, CAPTCHA é resolvido em ~3 minutos
+const CAPTCHA_TIMEOUT = parseInt(process.env.BROWSERCLOUD_CAPTCHA_TIMEOUT) || 300000;
+
 // Mapeamento de campos amigáveis (busca.json) para nomes técnicos (DOM)
 const FIELD_MAPPING = {
   "Tribunal": "tribunal",
@@ -214,9 +218,10 @@ async function isCaptchaResolved(page) {
  * 2. Aguarda evento "Captcha.solveFinished" (indica que foi resolvido)
  * 3. Para Cloudflare, também aguarda elemento específico da página (conforme documentação Scrapeless)
  * 4. Se não houver CAPTCHA, verifica visualmente e continua
- * Timeout padrão: 180 segundos (Cloudflare Turnstile pode demorar até 120s)
+ * Timeout padrão: Configurado via BROWSERCLOUD_CAPTCHA_TIMEOUT (.env)
+ * Com proxy datacenter BR, CAPTCHA é resolvido em ~3 minutos
  */
-async function onCaptchaFinished(page, timeout = 180_000) {
+async function onCaptchaFinished(page, timeout = CAPTCHA_TIMEOUT) {
   const startTime = Date.now();
   let captchaDetected = false;
   let captchaSolved = false;
@@ -640,76 +645,129 @@ async function clearAllCookies(page) {
 }
 
 /**
- * Conecta ao Scrapeless Cloud Browser
+ * Conecta ao BrowserCloud.io Cloud Browser
+ * Suporta resolução automática de Cloudflare Turnstile
+ * Implementa retry com backoff exponencial para erros temporários
  */
 async function connectBrowser() {
-  try {
-    log("🔌 Conectando ao Scrapeless Cloud Browser...", "INFO");
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY = 2000; // 2 segundos
 
-    // Configuração de fingerprint customizado para evitar detecção
-    const fingerprint = {
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      platform: 'Windows',
-      screen: {
-        width: 1920,
-        height: 1080
-      },
-      localization: {
-        languages: ['pt-BR', 'pt', 'en-US', 'en'],
-        timezone: 'America/Sao_Paulo',
-        geolocation: {
-          latitude: -23.5505, // São Paulo, Brasil
-          longitude: -46.6333,
-          accuracy: 100
-        }
-      },
-      args: {
-        '--window-size': '1920,1080',
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt === 1) {
+        log("🔌 Conectando ao BrowserCloud.io Cloud Browser...", "INFO");
+      } else {
+        log(`🔄 Tentativa ${attempt}/${MAX_RETRIES}...`, "INFO");
       }
-    };
 
-    // Verificar se deve usar proxy baseado na variável SCRAPELESS_PROXY
-    const useProxy = process.env.SCRAPELESS_PROXY !== "FALSE";
-    const proxyCountry = process.env.SCRAPELESS_PROXY_COUNTRY || "BR";
+      // Construir URL base com token
+      let connectionURL = `wss://chrome-v2.browsercloud.io?token=${process.env.BROWSERCLOUD_TOKEN}`;
 
-    // Verificar se deve usar modo anônimo (padrão: FALSE)
-    const useIncognito = process.env.PUPPETEER_EVERY_PAGE_ANONIMOUS === "TRUE";
+      // Adicionar timeout se configurado
+      if (process.env.BROWSERCLOUD_TIMEOUT) {
+        connectionURL += `&timeout=${process.env.BROWSERCLOUD_TIMEOUT}`;
+        if (attempt === 1) log(`   ⏱️ Timeout: ${process.env.BROWSERCLOUD_TIMEOUT}ms`, "INFO");
+      }
 
-    // Construir query params para Scrapeless
-    const queryParams = {
-      token: process.env.SCRAPELESS_TOKEN,
-      sessionRecording: process.env.SCRAPELESS_SESSION_RECORDING === "true",
-      sessionTTL: parseInt(process.env.SCRAPELESS_SESSION_TTL || "900"),
-      sessionName: process.env.SCRAPELESS_SESSION_NAME || "STJ Scraper",
-      fingerprint: encodeURIComponent(JSON.stringify(fingerprint)),
-      incognito: useIncognito,
-    };
+      // Adicionar solveCaptcha se configurado (parâmetro sem valor)
+      if (process.env.BROWSERCLOUD_SOLVE_CAPTCHA === "true") {
+        connectionURL += `&solveCaptcha`;
+        if (attempt === 1) log("   🔓 CAPTCHA Solver: ✅ ATIVADO (Cloudflare Turnstile)", "INFO");
+      }
 
-    // Adicionar proxy apenas se SCRAPELESS_PROXY não for FALSE
-    if (useProxy) {
-      queryParams.proxyCountry = proxyCountry;
+      // Adicionar stealthMode se configurado (parâmetro sem valor)
+      if (process.env.BROWSERCLOUD_STEALTH_MODE === "true") {
+        connectionURL += `&stealthMode`;
+        if (attempt === 1) log("   🥷 Stealth Mode: ✅ ATIVADO", "INFO");
+      }
+
+      // Adicionar proxy se configurado
+      if (process.env.BROWSERCLOUD_PROXY && process.env.BROWSERCLOUD_PROXY !== "false") {
+        connectionURL += `&proxy=${process.env.BROWSERCLOUD_PROXY}`;
+        if (attempt === 1) log(`   🌐 Proxy: ${process.env.BROWSERCLOUD_PROXY}`, "INFO");
+      }
+
+      // Adicionar proxyCountry se configurado
+      if (process.env.BROWSERCLOUD_PROXY_COUNTRY) {
+        connectionURL += `&proxyCountry=${process.env.BROWSERCLOUD_PROXY_COUNTRY}`;
+        if (attempt === 1) log(`   🌍 Proxy Country: ${process.env.BROWSERCLOUD_PROXY_COUNTRY}`, "INFO");
+      }
+
+      // Adicionar proxySticky se configurado (parâmetro sem valor)
+      if (process.env.BROWSERCLOUD_PROXY_STICKY === "true") {
+        connectionURL += `&proxySticky`;
+        if (attempt === 1) log("   📌 Proxy Sticky: ✅ ATIVADO (mesmo IP durante sessão)", "INFO");
+      }
+
+      // Adicionar blockAds se configurado (parâmetro sem valor)
+      if (process.env.BROWSERCLOUD_BLOCK_ADS === "true") {
+        connectionURL += `&blockAds`;
+        if (attempt === 1) log("   🚫 Block Ads: ✅ ATIVADO", "INFO");
+      }
+
+      // Adicionar blockCookieBanners se configurado (parâmetro sem valor)
+      if (process.env.BROWSERCLOUD_BLOCK_COOKIE_BANNERS === "true") {
+        connectionURL += `&blockCookieBanners`;
+        if (attempt === 1) log("   🍪 Block Cookie Banners: ✅ ATIVADO", "INFO");
+      }
+
+      // Adicionar context se configurado
+      if (process.env.BROWSERCLOUD_CONTEXT) {
+        connectionURL += `&context=${encodeURIComponent(process.env.BROWSERCLOUD_CONTEXT)}`;
+        if (attempt === 1) log(`   💾 Context: ${process.env.BROWSERCLOUD_CONTEXT} (persistir cookies)`, "INFO");
+      }
+
+      // Adicionar blockRes se configurado
+      if (process.env.BROWSERCLOUD_BLOCK_RES) {
+        connectionURL += `&blockRes=${encodeURIComponent(process.env.BROWSERCLOUD_BLOCK_RES)}`;
+        if (attempt === 1) log(`   ⚡ Block Resources: ${process.env.BROWSERCLOUD_BLOCK_RES}`, "INFO");
+      }
+
+      // Log da URL de conexão (sem token por segurança)
+      const debugURL = connectionURL.replace(/token=[^&]+/, 'token=***');
+      if (attempt === 1) log(`   🔗 URL: ${debugURL}`, "INFO");
+
+      const browser = await puppeteer.connect({
+        browserWSEndpoint: connectionURL,
+        defaultViewport: null,
+        ignoreHTTPSErrors: true,
+      });
+
+      log(`✅ Conectado ao BrowserCloud.io Cloud Browser!`, "SUCCESS");
+      if (process.env.BROWSERCLOUD_SOLVE_CAPTCHA === "true") {
+        log(`   🎯 Cloudflare Turnstile será resolvido automaticamente`, "SUCCESS");
+      }
+      return browser;
+
+    } catch (error) {
+      const isLastAttempt = attempt === MAX_RETRIES;
+      const isServerError = error.message.includes('500') || error.message.includes('502') || error.message.includes('503');
+
+      if (isServerError && !isLastAttempt) {
+        const delay = INITIAL_DELAY * Math.pow(2, attempt - 1); // Backoff exponencial
+        log(`⚠️ Erro temporário do servidor (${error.message})`, "WARNING");
+        log(`   Aguardando ${delay}ms antes de tentar novamente...`, "INFO");
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue; // Tenta novamente
+      }
+
+      // Erro final ou não recuperável
+      log(`❌ Erro ao conectar ao browser: ${error.message}`, "ERROR");
+
+      if (isServerError) {
+        log(`   ⚠️ Erro 500/502/503 = Problema temporário no servidor BrowserCloud`, "ERROR");
+        log(`   💡 Possíveis causas:`, "ERROR");
+        log(`      - Servidor sobrecarregado (tente novamente em alguns minutos)`, "ERROR");
+        log(`      - Manutenção temporária`, "ERROR");
+        log(`      - Rate limiting (muitas requisições)`, "ERROR");
+      } else {
+        log(`   Verifique se o token BROWSERCLOUD_TOKEN está correto`, "ERROR");
+        log(`   Obtenha seu token em: https://browsercloud.io/`, "ERROR");
+      }
+
+      throw error;
     }
-
-    const query = new URLSearchParams(queryParams);
-    const connectionURL = `wss://browser.scrapeless.com/api/v2/browser?${query.toString()}`;
-
-    log(`   Proxy: ${useProxy ? `Ativado (${proxyCountry})` : 'Desativado'}`, "INFO");
-    log(`   Modo Incognito: ${useIncognito ? '✅ Ativado' : '❌ Desativado'}`, "INFO");
-    log(`   Geolocation: São Paulo, Brasil (-23.5505, -46.6333)`, "INFO");
-    log(`   Session Recording: ${process.env.SCRAPELESS_SESSION_RECORDING === "true"}`, "INFO");
-    log(`   Session TTL: ${process.env.SCRAPELESS_SESSION_TTL || "900"}s`, "INFO");
-
-    const browser = await puppeteer.connect({
-      browserWSEndpoint: connectionURL,
-      defaultViewport: null,
-      ignoreHTTPSErrors: true,
-    });
-
-    log(`✅ Conectado ao Scrapeless Cloud Browser ${useProxy ? `com Proxy ${proxyCountry}` : 'sem Proxy'}`, "SUCCESS");
-    return browser;
-  } catch (error) {
-    log(`❌ Erro ao conectar ao browser: ${error.message}`, "ERROR");
-    throw error;
   }
 }
 
@@ -770,8 +828,8 @@ async function navigateToSTJ(page) {
     try {
       // Tentar aguardar resolução do CAPTCHA OU aparecimento do formulário
       const result = await Promise.race([
-        onCaptchaFinished(page, 180000), // 180 segundos (Cloudflare Turnstile pode demorar até 120s)
-        page.waitForSelector('input[name="livre"]', { timeout: 180000 }).then(() => ({
+        onCaptchaFinished(page), // Usa CAPTCHA_TIMEOUT do .env (padrão: 300s)
+        page.waitForSelector('input[name="livre"]', { timeout: CAPTCHA_TIMEOUT }).then(() => ({
           method: 'form-appeared',
           success: true
         }))

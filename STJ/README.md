@@ -1,29 +1,32 @@
 # 🏛️ Scraper STJ/TFR - Superior Tribunal de Justiça / Tribunal Federal de Recursos
 
-Extrai jurisprudências do site do STJ usando **Scrapeless Cloud Browser** com suporte a **Cloudflare Turnstile**.
+Extrai jurisprudências do site do STJ usando **BrowserCloud.io** com **resolução automática de Cloudflare Turnstile**.
 
-## ⚠️ STATUS ATUAL: BLOQUEADO POR CLOUDFLARE TURNSTILE
+> **📝 MIGRAÇÃO:** Este projeto foi migrado de **Scrapeless** para **BrowserCloud.io** devido à falta de saldo no Scrapeless. O BrowserCloud.io oferece resolução automática de CAPTCHA (incluindo Cloudflare Turnstile) e modo stealth.
 
-**PROBLEMA IDENTIFICADO:**
-- O site do STJ usa **Cloudflare Turnstile** (não reCAPTCHA V2)
-- O Scrapeless **detecta** o Cloudflare (`type: "cloudflare"`)
-- O Scrapeless **NÃO consegue resolver** automaticamente
-- Página fica presa em "Just a moment..."
+## ✅ STATUS ATUAL: FUNCIONAL COM BROWSERCLOUD.IO
 
-**SOLUÇÕES POSSÍVEIS:**
-1. **API Oficial**: Verificar se STJ oferece API pública
-2. **Scraping Manual Assistido**: Usuário resolve CAPTCHA, script continua automaticamente
-3. **Serviço Especializado**: FlareSolverr (open-source) ou 2Captcha/Anti-Captcha (pagos)
-4. **Análise de Screenshots**: Implementar seletores baseados em screenshots fornecidos
+**SOLUÇÃO IMPLEMENTADA:**
+- ✅ **BrowserCloud.io** com resolução automática de **Cloudflare Turnstile**
+- ✅ **Stealth Mode** para evitar detecção de bot
+- ✅ **Proxy Datacenter BR** para melhor performance
+- ✅ **Context Persistence** para manter cookies entre sessões
+
+**RECURSOS DO BROWSERCLOUD.IO:**
+- ✅ Resolve automaticamente: reCAPTCHA, FunCaptcha, GeeTest, **Cloudflare Turnstile**
+- ✅ Stealth Mode anti-detecção
+- ✅ Proxy Pool com 100M+ IPs de 195 países
+- ✅ Compatível com Puppeteer (mesma API)
+- ✅ Free Trial disponível
 
 ---
 
 ## 📋 Características
 
-- ✅ **Scrapeless Cloud Browser** (escalabilidade)
+- ✅ **BrowserCloud.io Cloud Browser** (resolução automática de CAPTCHA)
 - ✅ **Suporte Dual Tribunal**: STJ e TFR
 - ✅ **Campo sigla_tribunal**: Identificação do tribunal de origem
-- ⚠️ **Cloudflare Turnstile**: BLOQUEIO ATIVO - NÃO RESOLVIDO
+- ✅ **Cloudflare Turnstile**: ✅ RESOLVIDO AUTOMATICAMENTE
 - ✅ **Puppeteer-core + WebSocket**
 - ✅ **OpenAI GPT-4o-mini**: Categorização de ementas
 - ✅ **OpenAI text-embedding-3-small**: Geração de embeddings (1536 dimensões)
@@ -41,7 +44,7 @@ npm install
 cp .env.sample .env
 
 # Editar .env com suas credenciais
-# - SCRAPELESS_TOKEN
+# - BROWSERCLOUD_TOKEN (obtenha em: https://browsercloud.io/)
 # - OPENAI_API_KEY
 # - PINECONE_API_KEY
 ```
@@ -53,15 +56,21 @@ cp .env.sample .env
 ### 1. Variáveis de Ambiente (`.env`)
 
 ```env
-# Scrapeless
-SCRAPELESS_TOKEN=sk_YOUR_TOKEN_HERE
-SCRAPELESS_PROXY_COUNTRY=BR
-SCRAPELESS_SESSION_RECORDING=true
-SCRAPELESS_SESSION_TTL=900
-SCRAPELESS_SESSION_NAME=STJ Scraper - Cloudflare Turnstile
+# BrowserCloud.io (RECOMENDADO - Resolve Cloudflare Turnstile!)
+BROWSERCLOUD_TOKEN=YOUR_TOKEN_HERE
+BROWSERCLOUD_TIMEOUT=90000
+BROWSERCLOUD_SOLVE_CAPTCHA=true
+BROWSERCLOUD_STEALTH_MODE=true
+BROWSERCLOUD_PROXY=datacenter
+BROWSERCLOUD_PROXY_COUNTRY=BR
+BROWSERCLOUD_PROXY_STICKY=true
+BROWSERCLOUD_BLOCK_ADS=false
+BROWSERCLOUD_BLOCK_COOKIE_BANNERS=true
+BROWSERCLOUD_CONTEXT=stj-scraper
+BROWSERCLOUD_BLOCK_RES=image,media,font
 
 # STJ URL
-STJ_URL=https://scon.stj.jus.br/SCON/
+STJ_URL=https://scon.stj.jus.br/SCON/jurisprudencia/toc.jsp
 
 # OpenAI
 OPENAI_API_KEY=sk-proj-YOUR_OPENAI_API_KEY_HERE
@@ -71,11 +80,17 @@ OPENAI_MODEL=gpt-4o-mini
 PINECONE_API_KEY=pcsk_YOUR_PINECONE_API_KEY_HERE
 PINECONE_ENVIRONMENT=us-east-1
 PINECONE_CLOUD=aws
-PINECONE_INDEX_NAME=jurisprudencias-tjsp
+PINECONE_INDEX_NAME=jurisprudencias-stj
 PINECONE_DIMENSION=1536
 PINECONE_TYPE=DENSE
 PINECONE_CAPACITY_MODE=SERVERLESS
 ```
+
+**Obter Token BrowserCloud.io:**
+1. Acesse: https://browsercloud.io/
+2. Crie uma conta (Free Trial disponível)
+3. Copie seu API token
+4. Cole no `.env` em `BROWSERCLOUD_TOKEN`
 
 ### 2. Configuração de Busca (`config/busca.json`)
 
